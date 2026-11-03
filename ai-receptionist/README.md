@@ -47,6 +47,7 @@ Local development without Docker for the API:
 
 ```bash
 make install                  # creates .venv and installs apps/api
+make check-keys               # confirms each key in .env with its provider
 make db                       # starts only postgres + redis in Docker
 make migrate
 make dev                      # uvicorn with reload on :8000

@@ -87,6 +87,7 @@ calls, and the agent will improvise instead of using the knowledge base.
 ## Provisioning a tenant
 
 ```bash
+make check-keys                  # every key works? (one cheap call each, keys never printed)
 make db && make migrate          # database up to date
 make seed                        # creates the demo tenant + its number row
 make provision                   # ← pushes the agent to Vapi, attaches the number

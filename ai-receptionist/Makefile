@@ -2,7 +2,7 @@ VENV ?= .venv
 PY := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 
-.PHONY: lock install up down db dev worker confirmations crm seed provision migrate revision test lint fmt dashboard-install dashboard-dev dashboard-build
+.PHONY: check-keys lock install up down db dev worker confirmations crm seed provision migrate revision test lint fmt dashboard-install dashboard-dev dashboard-build
 
 # Regenerate the runtime dependency lock the production image installs from.
 # Resolves apps/api's base dependencies in a throwaway venv, so dev tools
@@ -43,6 +43,11 @@ confirmations:
 # Separate again: a tenant's CRM being down must not stall confirmations.
 crm:
 	cd apps/api && ../../$(PY) -m app.workers.crm_sync
+
+# Confirm every API key works before dialling in: one cheap read-only call per
+# provider, keys never printed. Exits non-zero if a test call would fail.
+check-keys:
+	cd apps/api && ../../$(PY) -m app.preflight
 
 seed:
 	cd apps/api && ../../$(PY) scripts/seed_demo.py ../../config/tenants/example-dental.yaml

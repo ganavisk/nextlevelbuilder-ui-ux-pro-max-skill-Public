@@ -7,6 +7,7 @@ rather than surfacing mid-call.
 """
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
@@ -15,8 +16,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _PLACEHOLDER_SECRETS = {"dev-only-secret", "change-me-generate-with-openssl-rand-hex-32"}
 
 
+# Where local secrets are read from, resolved from this file rather than the
+# working directory: `make dev` runs inside apps/api, so a cwd-relative ".env"
+# silently ignored the repo-root file the docs (and docker compose) use.
+# Both are read; the repo-root file wins when both set a value. In the
+# production image neither exists and values come from the environment.
+_API_DIR = Path(__file__).resolve().parents[3]
+ENV_FILES = (_API_DIR / ".env", _API_DIR.parent.parent / ".env")
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(env_file=ENV_FILES, env_file_encoding="utf-8", extra="ignore")
 
     # Application
     app_env: Literal["development", "staging", "production", "test"] = "development"

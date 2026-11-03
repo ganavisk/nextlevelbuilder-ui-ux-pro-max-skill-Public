@@ -54,3 +54,14 @@ def test_platform_style_database_urls_get_the_async_driver(scheme: str) -> None:
 def test_an_explicit_driver_is_left_alone() -> None:
     url = "postgresql+asyncpg://u:p@db.internal:5432/app"
     assert Settings(_env_file=None, database_url=url).database_url == url
+
+
+def test_env_files_resolve_to_the_api_folder_and_the_repo_root() -> None:
+    """`make dev` runs inside apps/api, so a cwd-relative ".env" used to ignore
+    the repo-root file the docs tell people to fill in."""
+    from app.core.config import ENV_FILES
+
+    api_env, root_env = ENV_FILES
+    assert (api_env.parent / "pyproject.toml").exists()
+    assert (root_env.parent / "docker-compose.yml").exists()
+    assert ENV_FILES.index(root_env) > ENV_FILES.index(api_env)  # the repo-root file wins
