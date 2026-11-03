@@ -14,6 +14,13 @@ export interface User {
   role: Role;
 }
 
+/** Whether the phone agent callers reach has the saved settings. */
+export interface VoiceSync {
+  state: "live" | "updating" | "failed" | "not_connected";
+  synced_at: string | null;
+  error: string;
+}
+
 export interface Tenant {
   id: string;
   slug: string;

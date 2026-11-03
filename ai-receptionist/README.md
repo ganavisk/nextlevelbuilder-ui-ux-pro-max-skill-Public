@@ -61,7 +61,7 @@ The background workers are separate processes — run each in its own terminal:
 ```bash
 make worker                   # post-call: transcripts, summaries, lead scoring
 make confirmations            # appointment confirmation email + SMS
-make crm                      # CRM sync (HubSpot): contact, activity, deal
+make crm                      # CRM sync (HubSpot) + pushing Settings changes to the phone agent
 ```
 
 The dashboard (Phase 7) is a separate Next.js app:

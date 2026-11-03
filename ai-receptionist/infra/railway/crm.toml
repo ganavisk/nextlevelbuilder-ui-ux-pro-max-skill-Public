@@ -1,5 +1,11 @@
-# Railway service: crm   (CRM sync (HubSpot))
+# Railway service: crm   (CRM sync (HubSpot) + voice-agent sync)
 # No HTTP surface, no migrations: only the api service migrates. See README.md.
+#
+# Also consumes queue:voice_sync, pushing dashboard settings changes to the
+# Vapi assistant, so besides the CRM variables it needs the same voice
+# variables as the api service: VOICE_PROVIDER, VAPI_API_KEY,
+# VAPI_WEBHOOK_SECRET, PUBLIC_WEBHOOK_BASE_URL, TWILIO_ACCOUNT_SID and
+# TWILIO_AUTH_TOKEN. Without them a save shows "not updated" in Settings.
 
 [build]
 builder = "DOCKERFILE"

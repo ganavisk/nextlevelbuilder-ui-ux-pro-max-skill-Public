@@ -12,6 +12,11 @@ Failures propagate to `run_worker`, which retries with backoff and eventually
 dead-letters. On dead-letter the ledger row is marked so the failure is
 visible in the database, not only in Redis.
 
+The same process also consumes `queue:voice_sync` (pushing a tenant's
+changed settings to the voice vendor, see workers/voice_sync.py): both jobs
+push our state to an outside vendor, are rare, and are I/O-bound. Each queue
+has its own consumer loop, so a CRM backlog never delays a settings change.
+
 Run: python -m app.workers.crm_sync
 """
 
@@ -30,6 +35,7 @@ from app.core.observability import init_sentry
 from app.core.queue import (
     CRM_QUEUE,
     DEFAULT_MAX_ATTEMPTS,
+    VOICE_SYNC_QUEUE,
     reclaim_orphans,
     run_worker,
     stop_on_signal,
@@ -38,7 +44,9 @@ from app.core.queue import (
 from app.modules.crm.providers import get_crm_provider
 from app.modules.crm.providers.base import CRMProvider
 from app.modules.crm.service import mark_dead, sync_call
+from app.modules.telephony.providers import get_voice_provider
 from app.modules.tenants.repository import get_tenant
+from app.workers import voice_sync
 
 logger = get_logger(__name__)
 
@@ -87,10 +95,22 @@ async def main() -> None:
     redis = worker_redis(settings.redis_url)
     stop = stop_on_signal()
     deps = Deps(settings=settings, crm=get_crm_provider(settings))
+    voice_deps = voice_sync.Deps(settings=settings, voice=get_voice_provider(settings))
     await reclaim_orphans(redis, CRM_QUEUE)
-    logger.info("crm_worker_started", queue=CRM_QUEUE)
+    await reclaim_orphans(redis, VOICE_SYNC_QUEUE)
+    logger.info("crm_worker_started", queues=[CRM_QUEUE, VOICE_SYNC_QUEUE])
+    # One consumer loop per queue. They share the client: it pools
+    # connections, so one loop's blocking pop never holds up the other.
     try:
-        await run_worker(redis, CRM_QUEUE, functools.partial(handle_crm_sync, deps=deps), stop=stop)
+        await asyncio.gather(
+            run_worker(redis, CRM_QUEUE, functools.partial(handle_crm_sync, deps=deps), stop=stop),
+            run_worker(
+                redis,
+                VOICE_SYNC_QUEUE,
+                functools.partial(voice_sync.handle_voice_sync, deps=voice_deps),
+                stop=stop,
+            ),
+        )
     finally:
         await redis.aclose()
 

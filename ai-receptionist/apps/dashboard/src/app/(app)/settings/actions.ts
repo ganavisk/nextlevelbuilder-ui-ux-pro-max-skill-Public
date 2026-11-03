@@ -48,3 +48,13 @@ export async function saveTenant(_prev: FormState, formData: FormData): Promise<
   revalidatePath("/settings");
   return { error: null, saved: true };
 }
+
+export async function retryVoiceSync(): Promise<FormState> {
+  try {
+    await apiFetch("/tenants/me/voice-sync", { method: "POST" });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath("/settings");
+  return { error: null, saved: true };
+}

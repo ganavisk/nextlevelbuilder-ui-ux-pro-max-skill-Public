@@ -6,11 +6,13 @@ another tenant's data by guessing an id.
 """
 
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, Request
 
 from app.core.auth import AuthContext, get_current_user, require_role
 from app.core.config import Settings
+from app.core.errors import ValidationFailedError
 from app.core.util import deep_merge
 from app.modules.tenants.login import login as login_user
 from app.modules.tenants.repository import (
@@ -27,6 +29,13 @@ from app.modules.tenants.schemas import (
     TenantSummary,
     TenantUpdateRequest,
     UserSummary,
+    VoiceSyncSummary,
+)
+from app.modules.tenants.voice_sync import (
+    agent_snapshot,
+    get_status,
+    request_sync,
+    resync_if_changed,
 )
 
 router = APIRouter()
@@ -58,13 +67,26 @@ async def get_my_tenant(auth: AuthContext = Depends(get_current_user)) -> Tenant
     return TenantSummary.model_validate(tenant)
 
 
+def _valid_timezone(name: str) -> str:
+    """Every booking time and the voice agent's clock are computed in this
+    zone; an unknown name would break both, so refuse it at the door."""
+    name = name.strip()
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ValidationFailedError(
+            f"{name!r} isn't a timezone name. Use an IANA name such as America/Chicago."
+        ) from None
+    return name
+
+
 @router.patch("/tenants/me", response_model=TenantSummary)
 async def update_my_tenant(
-    body: TenantUpdateRequest, auth: AuthContext = Depends(require_role("admin"))
+    body: TenantUpdateRequest, request: Request, auth: AuthContext = Depends(require_role("admin"))
 ) -> TenantSummary:
     fields: dict[str, Any] = {}
     if body.timezone is not None:
-        fields["timezone"] = body.timezone
+        fields["timezone"] = _valid_timezone(body.timezone)
     if body.business_hours is not None:
         fields["business_hours"] = body.business_hours
     if body.settings is not None:
@@ -77,7 +99,11 @@ async def update_my_tenant(
         fields["settings"] = deep_merge(current.settings, body.settings)
     if not fields:
         return TenantSummary.model_validate(await get_tenant(auth.tenant_id))
+    before = await agent_snapshot(auth.tenant_id)
     tenant = await update_tenant(auth.tenant_id, **fields)
+    # Timezone, booking fields, services and forbidden topics all shape the
+    # phone agent; business hours and CRM settings don't. The diff decides.
+    await resync_if_changed(auth.tenant_id, before, redis=request.app.state.redis)
     return TenantSummary.model_validate(tenant)
 
 
@@ -91,8 +117,28 @@ async def get_my_agent_config(
 
 @router.patch("/tenants/me/agent-config", response_model=AgentConfigSummary)
 async def update_my_agent_config(
-    body: AgentConfigUpdateRequest, auth: AuthContext = Depends(require_role("admin"))
+    body: AgentConfigUpdateRequest,
+    request: Request,
+    auth: AuthContext = Depends(require_role("admin")),
 ) -> AgentConfigSummary:
     fields = body.model_dump(exclude_unset=True, exclude_none=True)
+    before = await agent_snapshot(auth.tenant_id)
     config = await create_agent_config_version(auth.tenant_id, **fields)
+    await resync_if_changed(auth.tenant_id, before, redis=request.app.state.redis)
     return AgentConfigSummary.model_validate(config)
+
+
+@router.get("/tenants/me/voice-sync", response_model=VoiceSyncSummary)
+async def get_my_voice_sync(auth: AuthContext = Depends(get_current_user)) -> VoiceSyncSummary:
+    status = await get_status(auth.tenant_id)
+    return VoiceSyncSummary(state=status.state, synced_at=status.synced_at, error=status.error)
+
+
+@router.post("/tenants/me/voice-sync", response_model=VoiceSyncSummary)
+async def retry_my_voice_sync(
+    request: Request, auth: AuthContext = Depends(require_role("admin"))
+) -> VoiceSyncSummary:
+    """Push the current settings to the phone agent again (after a failure)."""
+    await request_sync(auth.tenant_id, redis=request.app.state.redis)
+    status = await get_status(auth.tenant_id)
+    return VoiceSyncSummary(state=status.state, synced_at=status.synced_at, error=status.error)

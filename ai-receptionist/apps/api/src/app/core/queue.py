@@ -54,6 +54,10 @@ CONFIRMATIONS_QUEUE = "queue:confirmations"
 # CRM synchronization. Separate again: a tenant's HubSpot being down must not
 # stall confirmations a customer is waiting on.
 CRM_QUEUE = "queue:crm"
+# Pushing a tenant's changed settings to the voice vendor's agent. Consumed by
+# the same process as CRM sync (both push our state to an outside vendor), on
+# its own queue so a CRM backlog never delays a settings change going live.
+VOICE_SYNC_QUEUE = "queue:voice_sync"
 
 DEFAULT_MAX_ATTEMPTS = 5
 DEFAULT_BLOCK_SECONDS = 5

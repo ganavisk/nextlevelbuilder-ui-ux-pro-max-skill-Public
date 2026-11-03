@@ -24,6 +24,13 @@ class Tenant(Base):
     settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     status: Mapped[str] = mapped_column(Text, default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default="now()")
+    # Is the voice vendor's agent up to date? See migration 0009 and
+    # tenants/voice_sync.py.
+    voice_sync_requested: Mapped[int] = mapped_column(Integer, default=0)
+    voice_sync_done: Mapped[int] = mapped_column(Integer, default=0)
+    voice_sync_failed_version: Mapped[int] = mapped_column(Integer, default=0)
+    voice_sync_error: Mapped[str] = mapped_column(Text, default="")
+    voice_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class User(Base):

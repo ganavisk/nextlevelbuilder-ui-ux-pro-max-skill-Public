@@ -3,7 +3,7 @@
 #   api            uvicorn on $PORT (Railway injects it), default 8000
 #   worker         post-call classification worker
 #   confirmations  appointment confirmation email/SMS worker
-#   crm            CRM sync worker
+#   crm            CRM sync + voice-agent sync worker
 #   migrate        alembic upgrade head (run as the pre-deploy command)
 #   healthcheck    used by the image HEALTHCHECK; passes for non-API roles
 #

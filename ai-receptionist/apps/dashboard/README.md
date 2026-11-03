@@ -66,6 +66,16 @@ make dashboard-build     # production build + typecheck
 Sign in with the tenant's `dashboard:` credentials from its `config/tenants/*.yaml`
 (created by `make seed`): business ID is the tenant slug, e.g. `bright-smile-dental`.
 
+## Settings and the live phone agent
+
+Saving in Settings stores the change at once, but callers only hear it once
+the API has pushed it to the voice vendor (a background job, normally
+seconds). The **Phone agent** row under Integrations shows that state: live,
+updating, not updated (with **Try again**), or not connected. While an update is
+in flight the page re-renders every 3 s (for up to 2 minutes, paused while the
+tab is hidden), so the save notice changes from "Sending it to the phone
+agent..." to "Saved and live" without a reload.
+
 ## Roles
 
 `viewer` can read everything. `admin` and `owner` can cancel appointments, work callbacks,

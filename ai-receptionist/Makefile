@@ -57,8 +57,10 @@ NUMBER ?= +15550100001
 seed:
 	cd apps/api && ../../$(PY) scripts/seed_demo.py ../../config/tenants/example-$(TENANT).yaml --number $(NUMBER)
 
-# Push a tenant's agent config to the voice vendor and point its number at it.
-# Re-run after any prompt/knowledge/tool change. Override: make provision SLUG=...
+# Connect a tenant's numbers to the voice vendor (first time), or force a full
+# re-push. Dashboard changes are pushed automatically by the crm worker; re-run
+# this after changes made outside the dashboard (YAML re-seed, prompt or tool
+# code). Override: make provision SLUG=...
 SLUG ?= bright-smile-dental
 provision:
 	cd apps/api && ../../$(PY) scripts/provision_voice.py --slug $(SLUG)

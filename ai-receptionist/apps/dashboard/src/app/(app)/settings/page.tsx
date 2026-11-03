@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { apiFetch } from "@/lib/api";
 import { readSession } from "@/lib/session";
-import type { AgentConfig, Integration, Tenant } from "@/lib/types";
+import type { AgentConfig, Integration, Tenant, VoiceSync } from "@/lib/types";
 import { Badge, btn, Notice, PageHeader, Section } from "@/components/ui";
 import { AgentForm, TenantForm } from "./forms";
+import { VoiceSyncRow } from "./voice-sync";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -33,10 +34,11 @@ export default async function SettingsPage({
   searchParams: Promise<{ connected?: string; error?: string }>;
 }) {
   const sp = await searchParams;
-  const [tenant, agent, integrations, session] = await Promise.all([
+  const [tenant, agent, integrations, voiceSync, session] = await Promise.all([
     apiFetch<Tenant>("/tenants/me"),
     apiFetch<AgentConfig>("/tenants/me/agent-config"),
     apiFetch<Integration[]>("/integrations"),
+    apiFetch<VoiceSync>("/tenants/me/voice-sync"),
     readSession(),
   ]);
   const readOnly = session?.role === "viewer";
@@ -51,7 +53,8 @@ export default async function SettingsPage({
       {readOnly && <Notice tone="info">You have view-only access. Ask an admin to change settings.</Notice>}
 
       <Section title="Integrations" flush>
-        <ul>
+        <VoiceSyncRow sync={voiceSync} canRetry={!readOnly} timeZone={tenant.timezone} />
+        <ul className="border-t border-separator">
           {integrations.map((i) => (
             <li
               key={i.provider}
@@ -75,7 +78,7 @@ export default async function SettingsPage({
       </Section>
 
       <Section title="Business">
-        <TenantForm timezone={tenant.timezone} readOnly={readOnly} />
+        <TenantForm timezone={tenant.timezone} sync={voiceSync} readOnly={readOnly} />
       </Section>
 
       <Section
@@ -85,7 +88,7 @@ export default async function SettingsPage({
           </>
         }
       >
-        <AgentForm agent={agent} readOnly={readOnly} />
+        <AgentForm agent={agent} sync={voiceSync} readOnly={readOnly} />
       </Section>
     </>
   );

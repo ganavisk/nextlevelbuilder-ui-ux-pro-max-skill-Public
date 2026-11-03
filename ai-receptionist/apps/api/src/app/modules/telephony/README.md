@@ -36,6 +36,7 @@ contract-validated against the live sandbox (waits on API keys — M1 live
 test); drift is confined to `providers/vapi.py`. That includes the date
 template: the tests check what we send, but only a live call proves Vapi
 renders it.
-- The timezone is baked into the template when the agent is provisioned.
-  Changing it in Settings (or any prompt/voice change) only reaches calls
-  after `make provision SLUG=...`.
+- The timezone is baked into the template when the agent is pushed. A
+  Settings change re-pushes it automatically (`tenants/voice_sync.py`); a
+  change made outside the dashboard (a YAML re-seed, a code change) still
+  needs `make provision SLUG=...`.

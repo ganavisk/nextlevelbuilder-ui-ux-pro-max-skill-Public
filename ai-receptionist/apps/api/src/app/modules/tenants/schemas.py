@@ -7,7 +7,7 @@ grow internal-only columns without that automatically becoming API surface.
 """
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -59,6 +59,18 @@ class TenantUpdateRequest(BaseModel):
     timezone: str | None = None
     business_hours: dict[str, Any] | None = None
     settings: dict[str, Any] | None = None
+
+
+class VoiceSyncSummary(BaseModel):
+    """Whether the phone agent callers reach reflects the saved settings.
+
+    live: it does. updating: a save is being pushed. failed: the last push
+    failed (`error` says why; POST /tenants/me/voice-sync retries).
+    not_connected: no phone number is provisioned yet (`make provision`)."""
+
+    state: Literal["live", "updating", "failed", "not_connected"]
+    synced_at: datetime | None
+    error: str
 
 
 class AgentConfigSummary(BaseModel):

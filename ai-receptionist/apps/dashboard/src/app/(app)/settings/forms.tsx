@@ -3,24 +3,50 @@
 import { useActionState } from "react";
 import { btn, Notice } from "@/components/ui";
 import { saveAgent, saveTenant, type FormState } from "./actions";
-import type { AgentConfig } from "@/lib/types";
+import type { AgentConfig, VoiceSync } from "@/lib/types";
 
 const initial: FormState = { error: null, saved: false };
 
 const input =
   "w-full rounded-[10px] border border-separator bg-surface-2 px-3 py-2 text-[15px] text-label transition duration-150 placeholder:text-label-3 focus:border-tint focus:outline-none focus-visible:outline-none focus:ring-3 focus:ring-tint/25 disabled:text-label-2";
 
-function Status({ state }: { state: FormState }) {
+/** Saved is not the same as live on calls: the change is pushed to the phone
+ * agent in the background. The page re-renders while that runs (see
+ * voice-sync.tsx), so this notice moves from "sending" to "live" in place, next
+ * to the form the user just saved, wherever they've scrolled to. */
+function Status({ state, sync }: { state: FormState; sync: VoiceSync }) {
   if (state.error) return <Notice tone="bad">{state.error}</Notice>;
-  if (state.saved) return <Notice tone="good">Saved. New calls use the updated settings.</Notice>;
-  return null;
+  if (!state.saved) return null;
+  switch (sync.state) {
+    case "updating":
+      return <Notice tone="info">Saved. Sending it to the phone agent...</Notice>;
+    case "failed":
+      return (
+        <Notice tone="bad">
+          Saved, but the phone agent wasn&apos;t updated, so callers still hear the previous version.
+          Use Try again under Integrations.
+        </Notice>
+      );
+    case "not_connected":
+      return <Notice tone="good">Saved. It goes live when a phone number is connected.</Notice>;
+    default:
+      return <Notice tone="good">Saved and live: new calls use it.</Notice>;
+  }
 }
 
-export function AgentForm({ agent, readOnly }: { agent: AgentConfig; readOnly: boolean }) {
+export function AgentForm({
+  agent,
+  sync,
+  readOnly,
+}: {
+  agent: AgentConfig;
+  sync: VoiceSync;
+  readOnly: boolean;
+}) {
   const [state, action, pending] = useActionState(saveAgent, initial);
   return (
     <form action={action} className="flex max-w-2xl flex-col gap-5">
-      <Status state={state} />
+      <Status state={state} sync={sync} />
       <div className="flex flex-col gap-2">
         <label htmlFor="first_message" className="text-[13px] font-medium text-label-2">
           Greeting
@@ -75,11 +101,19 @@ export function AgentForm({ agent, readOnly }: { agent: AgentConfig; readOnly: b
   );
 }
 
-export function TenantForm({ timezone, readOnly }: { timezone: string; readOnly: boolean }) {
+export function TenantForm({
+  timezone,
+  sync,
+  readOnly,
+}: {
+  timezone: string;
+  sync: VoiceSync;
+  readOnly: boolean;
+}) {
   const [state, action, pending] = useActionState(saveTenant, initial);
   return (
     <form action={action} className="flex max-w-md flex-col gap-4">
-      <Status state={state} />
+      <Status state={state} sync={sync} />
       <div className="flex flex-col gap-2">
         <label htmlFor="timezone" className="text-[13px] font-medium text-label-2">
           Timezone
