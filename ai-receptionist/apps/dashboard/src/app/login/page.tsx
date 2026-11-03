@@ -1,25 +1,26 @@
 import type { Metadata } from "next";
+import { Phone } from "@phosphor-icons/react/dist/ssr";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Sign in" };
 
 export default function LoginPage() {
   return (
-    <div className="grid min-h-[100dvh] grid-cols-1 md:grid-cols-[3fr_2fr]">
-      <section className="flex flex-col justify-end gap-3 bg-zinc-900 px-8 py-12 text-zinc-100 md:px-16">
-        <h1 className="max-w-[18ch] text-3xl font-semibold leading-tight tracking-tight">
-          Every call answered. Every booking on the calendar.
-        </h1>
-        <p className="max-w-[48ch] text-sm text-zinc-400">
-          Review transcripts, work the callback queue and tune what your receptionist says.
-        </p>
-      </section>
-      <section className="flex items-center px-8 py-12 md:px-14">
-        <div className="w-full max-w-sm">
-          <h2 className="mb-6 text-lg font-semibold tracking-tight">Sign in</h2>
+    <main className="grid min-h-[100dvh] place-items-center px-4 py-12">
+      <div className="flex w-full max-w-[380px] flex-col items-center gap-6">
+        <span aria-hidden className="grid size-16 place-items-center rounded-[18px] bg-tint text-white shadow-sm">
+          <Phone size={32} weight="fill" />
+        </span>
+        <div className="text-center">
+          <h1 className="text-[28px] font-bold leading-[34px] tracking-[-0.02em]">Sign in</h1>
+          <p className="mt-1.5 text-[15px] text-label-2">
+            Review calls, work the callback queue and test your receptionist.
+          </p>
+        </div>
+        <div className="w-full rounded-[20px] bg-surface p-6 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
           <LoginForm />
         </div>
-      </section>
-    </div>
+      </div>
+    </main>
   );
 }

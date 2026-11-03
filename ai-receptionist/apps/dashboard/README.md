@@ -1,7 +1,8 @@
 # Dashboard (Next.js)
 
 The tenant-facing web app: call history with transcripts, analytics, appointments, the
-callback queue, CRM sync failures, and settings (persona, timezone, Google/HubSpot connect).
+callback queue, CRM sync failures, settings (persona, timezone, Google/HubSpot connect), and
+the **Test Lab** (simulated calls, a tool bench, a live per-bay day board).
 
 ## Purpose
 
@@ -10,8 +11,17 @@ engineering involvement. Delivered in Phase 7 (M5).
 
 ## Stack
 
-Next.js 15 (App Router, React 19, TypeScript strict), Tailwind CSS 4, Geist fonts,
-Phosphor icons. No client-side data fetching library and no UI kit.
+Next.js 15 (App Router, React 19, TypeScript strict), Tailwind CSS 4, Phosphor icons. No
+client-side data fetching library and no UI kit.
+
+## Design
+
+Apple Human Interface style built from the ui-ux-pro-max design system. It uses the San
+Francisco system font (Geist as the fallback), inset grouped lists, segmented controls,
+large titles, capsule badges and a translucent sidebar. It follows the system's light or
+dark appearance automatically. Every token, the contrast ratio it was measured at, and the
+pre-delivery checklist are in **`design-system/MASTER.md`**. Change colours there and in
+`src/app/globals.css` together.
 
 ## How it talks to the API
 
@@ -27,6 +37,9 @@ access for this app, and a script injected into a page cannot read the token.
   `apps/api/src/app/modules/*/schemas.py`. See Known risks.
 - `src/middleware.ts` — redirects to `/login` when there is no session cookie. This is a
   convenience check only; authorization is enforced by the API on every request.
+- `src/app/api/lab/[...path]/route.ts` — the Test Lab's only browser-to-API path. It is a
+  same-origin proxy that adds the token server-side, because the lab is interactive (chat,
+  bench, polling) and Server Actions can't poll. Path segments are allow-listed.
 - `src/app/api/integrations/[provider]/connect/route.ts` — asks the API for the provider's
   authorize URL (a browser navigation cannot carry a Bearer token) and redirects there.
   The provider later redirects to the API's `/callback`, which redirects back to
@@ -56,15 +69,18 @@ Sign in with the tenant's `dashboard:` credentials from its `config/tenants/*.ya
 ## Roles
 
 `viewer` can read everything. `admin` and `owner` can cancel appointments, work callbacks,
-edit settings, and connect integrations. The UI hides controls a viewer cannot use; the API
+edit settings, connect integrations, and use the Test Lab. The UI hides controls a viewer cannot use; the API
 is what actually refuses them (403).
 
 ## Known risks / future improvements
 
 - **Types can drift from the API.** They are hand-written. Generate them from the FastAPI
   OpenAPI spec (`packages/shared-types`) once the surface stabilises.
-- **No automated frontend tests yet.** Phase 7 verified it by driving a production build
-  against the live API with a real browser; that script is not committed.
+- **No automated frontend tests yet.** Phase 7 and the Test Lab were verified by driving a
+  production build against the API with a real browser (light, dark, 390px; no console or
+  CSP errors, no horizontal overflow); that script is not committed.
+- The Test Lab polls (board every 5 s, activity every 3 s, paused while the tab is hidden).
+  Fine for one person testing; switch to server-sent events if many staff keep it open.
 - Sessions are a single 60-minute token with no refresh; expiry means signing in again.
 - Not built: knowledge-base editor, qualification-question and escalation-policy editing,
   user management, password change.

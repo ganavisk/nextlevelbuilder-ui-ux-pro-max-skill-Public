@@ -1,16 +1,30 @@
-import Link from "next/link";
 import type { Metadata } from "next";
 import { apiFetch, query } from "@/lib/api";
-import { formatDateTime, formatPhone } from "@/lib/format";
+import { formatDateTime, formatPhone, humanize } from "@/lib/format";
 import { readSession } from "@/lib/session";
 import type { Appointment, Page } from "@/lib/types";
-import { Badge, EmptyState, PageHeader, Pagination, td, th } from "@/components/ui";
+import { Badge, EmptyState, PageHeader, Pagination, SegmentedControl, Table, td, th, tr } from "@/components/ui";
 import { CancelButton } from "./cancel-button";
 
 export const metadata: Metadata = { title: "Appointments" };
 
 const LIMIT = 25;
 const STATUSES = ["confirmed", "cancelled"];
+
+function DetailsCell({ details }: { details: Record<string, string> }) {
+  const entries = Object.entries(details ?? {});
+  if (entries.length === 0) return <span className="text-label-3">—</span>;
+  return (
+    <dl className="flex flex-col gap-0.5 text-[13px]">
+      {entries.map(([k, v]) => (
+        <div key={k} className="flex gap-1.5">
+          <dt className="text-label-2">{humanize(k)}</dt>
+          <dd className="truncate">{v}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
 
 export default async function AppointmentsPage({
   searchParams,
@@ -25,71 +39,80 @@ export default async function AppointmentsPage({
     readSession(),
   ]);
   const canCancel = session?.role !== "viewer";
+  const multiBay = data.items.some((a) => a.bay > 1);
+  const hasDetails = data.items.some((a) => Object.keys(a.details ?? {}).length > 0);
 
   return (
     <>
-      <PageHeader title="Appointments" description="Bookings the receptionist made on calls." />
-      <nav aria-label="Filter by status" className="flex gap-1.5 text-sm">
-        {[undefined, ...STATUSES].map((s) => (
-          <Link
-            key={s ?? "all"}
-            href={s ? `/appointments?status=${s}` : "/appointments"}
-            aria-current={s === status ? "true" : undefined}
-            className={`rounded-full border px-3 py-1 transition active:scale-95 ${
-              s === status
-                ? "border-zinc-900 bg-zinc-900 text-white"
-                : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-100"
-            }`}
-          >
-            {s ?? "All"}
-          </Link>
-        ))}
-      </nav>
+      <PageHeader title="Appointments" description="Bookings the receptionist made on calls. Test Lab bookings are marked test." />
+      <SegmentedControl
+        label="Filter by status"
+        items={[undefined, ...STATUSES].map((s) => ({
+          href: s ? `/appointments?status=${s}` : "/appointments",
+          label: s ?? "All",
+          active: s === status,
+        }))}
+      />
 
       {data.items.length === 0 ? (
-        <EmptyState
-          title="No appointments"
-          hint="When a caller books through the receptionist, the appointment shows up here and on the connected calendar."
-        />
-      ) : (
-        <div className="relative overflow-x-auto">
-          <table className="w-full min-w-[40rem]">
-            <thead className="border-b border-zinc-200">
-              <tr>
-                <th className={th}>Customer</th>
-                <th className={th}>Service</th>
-                <th className={th}>Starts</th>
-                <th className={th}>Status</th>
-                {canCancel && <th className={th}>
-                  <span className="sr-only">Actions</span>
-                </th>}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-200">
-              {data.items.map((a) => (
-                <tr key={a.id}>
-                  <td className={td}>
-                    <p className="font-medium">{a.customer_name}</p>
-                    <p className="font-mono text-xs text-zinc-500">{formatPhone(a.customer_phone)}</p>
-                  </td>
-                  <td className={td}>{a.service}</td>
-                  <td className={`${td} whitespace-nowrap`}>
-                    <span className="font-mono">{formatDateTime(a.starts_at, a.timezone)}</span>
-                    <span className="ml-1 text-xs text-zinc-500">{a.timezone.split("/").pop()?.replace(/_/g, " ")}</span>
-                  </td>
-                  <td className={td}>
-                    <Badge value={a.status} />
-                  </td>
-                  {canCancel && (
-                    <td className={`${td} text-right`}>
-                      {a.status === "confirmed" && <CancelButton id={a.id} name={a.customer_name} />}
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="rounded-[14px] bg-surface">
+          <EmptyState
+            title="No appointments"
+            hint="When a caller books through the receptionist, the appointment shows up here and on the connected calendar. Try a booking in the Test Lab."
+          />
         </div>
+      ) : (
+        <Table minWidth="44rem">
+          <thead>
+            <tr>
+              <th className={th}>Customer</th>
+              <th className={th}>Service</th>
+              {hasDetails && <th className={th}>Details</th>}
+              <th className={th}>Starts</th>
+              {multiBay && <th className={th}>Bay</th>}
+              <th className={th}>Status</th>
+              {canCancel && (
+                <th className={th}>
+                  <span className="sr-only">Actions</span>
+                </th>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {data.items.map((a) => (
+              <tr key={a.id} className={tr}>
+                <td className={td}>
+                  <p className="font-medium">{a.customer_name || "—"}</p>
+                  <p className="num text-[13px] text-label-2">{formatPhone(a.customer_phone)}</p>
+                </td>
+                <td className={td}>{a.service}</td>
+                {hasDetails && (
+                  <td className={`${td} max-w-[18rem]`}>
+                    <DetailsCell details={a.details} />
+                  </td>
+                )}
+                <td className={`${td} whitespace-nowrap`}>
+                  <span className="num">{formatDateTime(a.starts_at, a.timezone)}</span>
+                  <span className="ml-1.5 text-[12px] text-label-2">
+                    {a.timezone.split("/").pop()?.replace(/_/g, " ")}
+                  </span>
+                </td>
+                {multiBay && <td className={`${td} num`}>{a.bay}</td>}
+                <td className={td}>
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <Badge value={a.status} />
+                    {a.simulated && <Badge value="simulated" />}
+                  </span>
+                </td>
+                {canCancel && (
+                  <td className={`${td} text-right`}>
+                    {a.status === "confirmed" && <CancelButton id={a.id} name={a.customer_name} />}
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </Table>
       )}
       <Pagination basePath="/appointments" params={{ status }} offset={offset} limit={LIMIT} total={data.total} />
     </>

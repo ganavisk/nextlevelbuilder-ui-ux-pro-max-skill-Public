@@ -1,27 +1,152 @@
 @import "tailwindcss";
 
-@theme {
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+/* Design tokens: see design-system/MASTER.md for where every value comes from
+   and the contrast ratio each text pairing was measured at. Light and dark
+   follow the system appearance, as Apple apps do. */
 
-  /* One accent, desaturated: a deep teal-green against zinc neutrals. */
-  --color-accent-50: oklch(0.97 0.012 180);
-  --color-accent-100: oklch(0.93 0.025 180);
-  --color-accent-600: oklch(0.52 0.085 180);
-  --color-accent-700: oklch(0.45 0.08 180);
-  --color-accent-800: oklch(0.38 0.07 180);
+:root {
+  color-scheme: light;
+  --bg: #f5f5f7;
+  --surface: #ffffff;
+  --surface-2: #f5f5f7;
+  --fill: rgba(120, 120, 128, 0.12);
+  --fill-strong: rgba(120, 120, 128, 0.2);
+  --separator: rgba(60, 60, 67, 0.18);
+  --label: #1d1d1f;
+  --label-2: #6e6e73;
+  --label-3: #8e8e93;
+  --tint: #0071e3;
+  --tint-text: #0067cf;
+  --chart: #0071e3;
+  --material: rgba(246, 246, 248, 0.72);
+  --tile-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+
+  --good: #217e38;
+  --good-bg: rgba(52, 199, 89, 0.12);
+  --warning: #a15e00;
+  --warning-bg: rgba(255, 149, 0, 0.12);
+  --critical: #d30b00;
+  --critical-bg: rgba(255, 59, 48, 0.12);
+  --info: #0067cf;
+  --info-bg: rgba(0, 113, 227, 0.12);
+  --neutral: #6c6c71;
+  --neutral-bg: rgba(142, 142, 147, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #000000;
+    --surface: #1c1c1e;
+    --surface-2: #2c2c2e;
+    --fill: rgba(118, 118, 128, 0.24);
+    --fill-strong: rgba(118, 118, 128, 0.36);
+    --separator: rgba(84, 84, 88, 0.6);
+    --label: #f5f5f7;
+    --label-2: #aeaeb2;
+    --label-3: #8e8e93;
+    --tint: #0071e3;
+    --tint-text: #389bff;
+    --chart: #0a84ff;
+    --material: rgba(30, 30, 32, 0.72);
+    --tile-shadow: none;
+
+    --good: #30d158;
+    --good-bg: rgba(48, 209, 88, 0.2);
+    --warning: #ff9f0a;
+    --warning-bg: rgba(255, 159, 10, 0.2);
+    --critical: #ff645b;
+    --critical-bg: rgba(255, 69, 58, 0.2);
+    --info: #389bff;
+    --info-bg: rgba(10, 132, 255, 0.2);
+    --neutral: #9c9ca1;
+    --neutral-bg: rgba(142, 142, 147, 0.2);
+  }
+}
+
+@theme inline {
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue",
+    var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", var(--font-geist-mono), monospace;
+
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-fill: var(--fill);
+  --color-fill-strong: var(--fill-strong);
+  --color-separator: var(--separator);
+  --color-label: var(--label);
+  --color-label-2: var(--label-2);
+  --color-label-3: var(--label-3);
+  --color-tint: var(--tint);
+  --color-tint-text: var(--tint-text);
+  --color-chart: var(--chart);
+  --color-good: var(--good);
+  --color-good-bg: var(--good-bg);
+  --color-warning: var(--warning);
+  --color-warning-bg: var(--warning-bg);
+  --color-critical: var(--critical);
+  --color-critical-bg: var(--critical-bg);
+  --color-info: var(--info);
+  --color-info-bg: var(--info-bg);
+  --color-neutral: var(--neutral);
+  --color-neutral-bg: var(--neutral-bg);
+
+  --ease-apple: cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
 @layer base {
-  html {
-    color-scheme: light;
-  }
   body {
-    @apply bg-zinc-50 text-zinc-900 antialiased;
-    font-feature-settings: "ss01", "cv11";
+    background: var(--bg);
+    color: var(--label);
+    font-size: 15px;
+    line-height: 20px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
+  /* Apple's focus ring: a soft tint halo, always visible for keyboard users. */
   :focus-visible {
-    @apply outline-2 outline-offset-2 outline-accent-600;
+    outline: 3px solid color-mix(in srgb, var(--tint) 55%, transparent);
+    outline-offset: 1px;
+    border-radius: 6px;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--tint) 25%, transparent);
+  }
+  a,
+  button,
+  summary,
+  [role="button"],
+  label[for] {
+    cursor: pointer;
+  }
+}
+
+@layer components {
+  /* The macOS sidebar material: translucent, blurred, slightly saturated. */
+  .material {
+    background: var(--material);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(20px) saturate(180%);
+  }
+  .tile {
+    background: var(--surface);
+    border-radius: 20px;
+    box-shadow: var(--tile-shadow);
+  }
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+  /* Simulated (test) bookings: texture as well as a label, so the distinction
+     never rests on colour alone. The stripes are darker than the block, so
+     white text on it only gains contrast (never below the tint's 4.7:1). */
+  .hatch {
+    background-image: repeating-linear-gradient(
+      135deg,
+      rgba(0, 0, 0, 0.28) 0 4px,
+      transparent 4px 9px
+    );
   }
 }
 
@@ -32,16 +157,26 @@
 }
 
 .skeleton {
-  @apply relative overflow-hidden rounded bg-zinc-200/70;
+  position: relative;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--fill);
 }
 .skeleton::after {
   content: "";
-  @apply absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/60 to-transparent;
-  animation: shimmer 1.4s ease-in-out infinite;
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, var(--fill), transparent);
+  animation: shimmer 1.4s var(--ease-apple) infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .skeleton::after {
-    animation: none;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

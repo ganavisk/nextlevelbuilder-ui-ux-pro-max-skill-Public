@@ -32,7 +32,7 @@ export function StatusButtons({ id, status }: { id: string; status: string }) {
         ))}
       </div>
       {error && (
-        <span role="alert" className="text-xs text-red-700">
+        <span role="alert" className="text-[12px] text-critical">
           {error}
         </span>
       )}

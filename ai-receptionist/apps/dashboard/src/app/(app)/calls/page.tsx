@@ -1,9 +1,9 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { apiFetch, query } from "@/lib/api";
-import { formatDateTime, formatDuration, formatPhone } from "@/lib/format";
+import { formatDateTime, formatDuration, formatPhone, humanize } from "@/lib/format";
 import type { CallSummary, Page } from "@/lib/types";
-import { Badge, EmptyState, PageHeader, Pagination, td, th } from "@/components/ui";
+import { Badge, EmptyState, PageHeader, Pagination, SegmentedControl, Table, td, th, tr } from "@/components/ui";
 
 export const metadata: Metadata = { title: "Calls" };
 
@@ -30,80 +30,69 @@ export default async function CallsPage({
 
   return (
     <>
-      <PageHeader title="Calls" description="Every inbound call, newest first." />
-      <nav aria-label="Filter by outcome" className="flex flex-wrap gap-1.5 text-sm">
-        {[undefined, ...OUTCOMES].map((o) => (
-          <Link
-            key={o ?? "all"}
-            href={o ? `/calls?outcome=${o}` : "/calls"}
-            aria-current={o === outcome ? "true" : undefined}
-            className={`rounded-full border px-3 py-1 transition active:scale-95 ${
-              o === outcome
-                ? "border-zinc-900 bg-zinc-900 text-white"
-                : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-100"
-            }`}
-          >
-            {o ? o.replace(/_/g, " ") : "All"}
-          </Link>
-        ))}
-      </nav>
+      <PageHeader title="Calls" description="Every call, newest first. Rehearsals from the Test Lab are marked test." />
+      <SegmentedControl
+        label="Filter by outcome"
+        items={[undefined, ...OUTCOMES].map((o) => ({
+          href: o ? `/calls?outcome=${o}` : "/calls",
+          label: o ? humanize(o) : "All",
+          active: o === outcome,
+        }))}
+      />
 
       {data.items.length === 0 ? (
-        <EmptyState
-          title={outcome ? "No calls with this outcome" : "No calls yet"}
-          hint={
-            outcome
-              ? "Try a different filter, or clear it to see every call."
-              : "Calls appear here after they end, with a transcript and a one-line summary."
-          }
-        />
-      ) : (
-        <div className="relative overflow-x-auto">
-          <table className="w-full min-w-[40rem]">
-            <thead className="border-b border-zinc-200">
-              <tr>
-                <th className={th}>Caller</th>
-                <th className={th}>When</th>
-                <th className={th}>Length</th>
-                <th className={th}>Outcome</th>
-                <th className={th}>Sentiment</th>
-                <th className={th}>Summary</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-200">
-              {data.items.map((c) => (
-                <tr key={c.id} className="transition hover:bg-zinc-100/60">
-                  <td className={`${td} whitespace-nowrap font-mono`}>
-                    <Link href={`/calls/${c.id}`} className="text-accent-700 underline-offset-2 hover:underline">
-                      {formatPhone(c.caller_e164)}
-                    </Link>
-                  </td>
-                  <td className={`${td} whitespace-nowrap text-zinc-600`}>{formatDateTime(c.started_at)}</td>
-                  <td className={`${td} font-mono text-zinc-600`}>
-                    {formatDuration(c.started_at, c.ended_at)}
-                  </td>
-                  <td className={td}>
-                    <Badge value={c.outcome} />
-                  </td>
-                  <td className={td}>
-                    <Badge value={c.sentiment} />
-                  </td>
-                  <td className={`${td} max-w-[28ch] truncate text-zinc-600`} title={c.summary ?? ""}>
-                    {c.summary ?? "--"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="rounded-[14px] bg-surface">
+          <EmptyState
+            title={outcome ? "No calls with this outcome" : "No calls yet"}
+            hint={
+              outcome
+                ? "Try a different filter, or show all calls."
+                : "Calls appear here after they end, with a transcript and a one-line summary."
+            }
+          />
         </div>
+      ) : (
+        <Table>
+          <thead>
+            <tr>
+              <th className={th}>Caller</th>
+              <th className={th}>When</th>
+              <th className={th}>Length</th>
+              <th className={th}>Outcome</th>
+              <th className={th}>Sentiment</th>
+              <th className={th}>Summary</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.items.map((c) => (
+              <tr key={c.id} className={tr}>
+                <td className={`${td} whitespace-nowrap`}>
+                  <Link href={`/calls/${c.id}`} className="num font-medium text-tint-text hover:underline">
+                    {formatPhone(c.caller_e164)}
+                  </Link>
+                  {c.direction === "simulated" && (
+                    <span className="ml-2 align-middle">
+                      <Badge value="simulated" />
+                    </span>
+                  )}
+                </td>
+                <td className={`${td} whitespace-nowrap text-label-2`}>{formatDateTime(c.started_at)}</td>
+                <td className={`${td} num text-label-2`}>{formatDuration(c.started_at, c.ended_at)}</td>
+                <td className={td}>
+                  <Badge value={c.outcome} />
+                </td>
+                <td className={td}>
+                  <Badge value={c.sentiment} />
+                </td>
+                <td className={`${td} max-w-[30ch] truncate text-label-2`} title={c.summary ?? ""}>
+                  {c.summary ?? "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
       )}
-      <Pagination
-        basePath="/calls"
-        params={{ outcome }}
-        offset={offset}
-        limit={LIMIT}
-        total={data.total}
-      />
+      <Pagination basePath="/calls" params={{ outcome }} offset={offset} limit={LIMIT} total={data.total} />
     </>
   );
 }

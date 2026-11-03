@@ -1,16 +1,27 @@
-import Link from "next/link";
 import type { Metadata } from "next";
 import { apiFetch, query } from "@/lib/api";
 import { formatPhone } from "@/lib/format";
 import { readSession } from "@/lib/session";
 import type { CallbackRequest, Page } from "@/lib/types";
-import { Badge, EmptyState, PageHeader, Pagination, td, th } from "@/components/ui";
+import { Badge, EmptyState, PageHeader, Pagination, SegmentedControl, Table, td, th, tr } from "@/components/ui";
 import { StatusButtons } from "./status-buttons";
 
 export const metadata: Metadata = { title: "Callbacks" };
 
 const LIMIT = 25;
 const STATUSES = ["open", "contacted", "resolved"];
+
+function Reason({ text }: { text: string }) {
+  // The auto shop's safety rule files do-not-drive calls as "URGENT ...".
+  const urgent = /^urgent\b/i.test(text.trim());
+  const rest = urgent ? text.trim().replace(/^urgent\b[:\s-]*/i, "") : text;
+  return (
+    <span className="flex items-start gap-2">
+      {urgent && <Badge value="urgent" tone="critical" />}
+      <span>{rest}</span>
+    </span>
+  );
+}
 
 export default async function CallbacksPage({
   searchParams,
@@ -30,63 +41,59 @@ export default async function CallbacksPage({
     <>
       <PageHeader
         title="Callbacks"
-        description="Callers the receptionist could not fully help and promised someone would ring back. Open requests are listed first."
+        description="Callers who were promised a call back. Open requests come first."
       />
-      <nav aria-label="Filter by status" className="flex gap-1.5 text-sm">
-        {[undefined, ...STATUSES].map((s) => (
-          <Link
-            key={s ?? "all"}
-            href={s ? `/callbacks?status=${s}` : "/callbacks"}
-            aria-current={s === status ? "true" : undefined}
-            className={`rounded-full border px-3 py-1 transition active:scale-95 ${
-              s === status
-                ? "border-zinc-900 bg-zinc-900 text-white"
-                : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-100"
-            }`}
-          >
-            {s ?? "All"}
-          </Link>
-        ))}
-      </nav>
+      <SegmentedControl
+        label="Filter by status"
+        items={[undefined, ...STATUSES].map((s) => ({
+          href: s ? `/callbacks?status=${s}` : "/callbacks",
+          label: s ?? "All",
+          active: s === status,
+        }))}
+      />
 
       {data.items.length === 0 ? (
-        <EmptyState
-          title={status ? `No ${status} callbacks` : "Nobody is waiting on a callback"}
-          hint="When a caller asks for a person or the receptionist hits something it should not answer, the request lands here."
-        />
-      ) : (
-        <div className="relative overflow-x-auto">
-          <table className="w-full min-w-[40rem]">
-            <thead className="border-b border-zinc-200">
-              <tr>
-                <th className={th}>Caller</th>
-                <th className={th}>Reason</th>
-                <th className={th}>Best time</th>
-                <th className={th}>Status</th>
-                {canEdit && <th className={th}>
-                  <span className="sr-only">Actions</span>
-                </th>}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-200">
-              {data.items.map((r) => (
-                <tr key={r.id}>
-                  <td className={`${td} whitespace-nowrap font-mono`}>{formatPhone(r.caller_e164)}</td>
-                  <td className={`${td} max-w-[40ch]`}>{r.reason}</td>
-                  <td className={`${td} text-zinc-600`}>{r.preferred_window ?? "Any time"}</td>
-                  <td className={td}>
-                    <Badge value={r.status} />
-                  </td>
-                  {canEdit && (
-                    <td className={`${td} text-right`}>
-                      <StatusButtons id={r.id} status={r.status} />
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="rounded-[14px] bg-surface">
+          <EmptyState
+            title={status ? `No ${status} callbacks` : "Nobody is waiting on a callback"}
+            hint="When a caller asks for a person, or the receptionist hits something it shouldn't answer, the request lands here."
+          />
         </div>
+      ) : (
+        <Table>
+          <thead>
+            <tr>
+              <th className={th}>Caller</th>
+              <th className={th}>Reason</th>
+              <th className={th}>Best time</th>
+              <th className={th}>Status</th>
+              {canEdit && (
+                <th className={th}>
+                  <span className="sr-only">Actions</span>
+                </th>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {data.items.map((r) => (
+              <tr key={r.id} className={tr}>
+                <td className={`${td} num whitespace-nowrap font-medium`}>{formatPhone(r.caller_e164)}</td>
+                <td className={`${td} max-w-[42ch]`}>
+                  <Reason text={r.reason} />
+                </td>
+                <td className={`${td} text-label-2`}>{r.preferred_window ?? "Any time"}</td>
+                <td className={td}>
+                  <Badge value={r.status} />
+                </td>
+                {canEdit && (
+                  <td className={`${td} text-right`}>
+                    <StatusButtons id={r.id} status={r.status} />
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </Table>
       )}
       <Pagination basePath="/callbacks" params={{ status }} offset={offset} limit={LIMIT} total={data.total} />
     </>

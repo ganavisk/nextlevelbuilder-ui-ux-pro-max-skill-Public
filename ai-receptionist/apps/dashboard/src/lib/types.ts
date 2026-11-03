@@ -92,6 +92,10 @@ export interface Appointment {
   customer_phone: string;
   customer_email: string | null;
   timezone: string;
+  bay: number;
+  details: Record<string, string>;
+  /** Booked from a Test Lab call, not by a customer. */
+  simulated: boolean;
 }
 
 export interface CallbackRequest {
@@ -121,4 +125,69 @@ export interface AnalyticsSummary {
   booking_rate: number;
   escalation_rate: number;
   daily_call_volume: { date: string; count: number }[];
+}
+
+// ── Test Lab (apps/api/src/app/modules/testlab/schemas.py) ─────────────────
+
+export interface LabStatus {
+  llm_available: boolean;
+  tools: string[];
+  bays: number;
+  timezone: string;
+  default_caller: string;
+  services: string[];
+  booking_fields: { key: string; description: string }[];
+}
+
+export interface LabSession {
+  session_id: string;
+  caller_e164: string;
+  first_message: string;
+  started_at: string;
+}
+
+export interface ToolEvent {
+  tool: string;
+  arguments: Record<string, unknown>;
+  result: string;
+  latency_ms: number;
+}
+
+export interface LabTurn {
+  reply: string;
+  tool_events: ToolEvent[];
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+}
+
+export interface BoardAppointment {
+  id: string;
+  bay: number;
+  starts_at: string;
+  ends_at: string;
+  service: string;
+  customer_name: string;
+  details: Record<string, string>;
+  simulated: boolean;
+}
+
+export interface Board {
+  day: string;
+  timezone: string;
+  bays: number;
+  opening_hours: string[][];
+  appointments: BoardAppointment[];
+}
+
+export interface ActivityItem {
+  id: string;
+  occurred_at: string;
+  event_type: string;
+  call_id: string;
+  caller_e164: string;
+  simulated: boolean;
+  tool: string | null;
+  summary: string;
+  latency_ms: number | null;
 }

@@ -21,7 +21,7 @@ export function CancelButton({ id, name }: { id: string; name: string }) {
         {pending ? "Cancelling..." : "Cancel"}
       </button>
       {error && (
-        <span role="alert" className="max-w-[24ch] text-right text-xs text-red-700">
+        <span role="alert" className="max-w-[24ch] text-right text-[12px] text-critical">
           {error}
         </span>
       )}

@@ -7,7 +7,8 @@ import type { AgentConfig } from "@/lib/types";
 
 const initial: FormState = { error: null, saved: false };
 
-const input = "rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm disabled:bg-zinc-100 disabled:text-zinc-500";
+const input =
+  "w-full rounded-[10px] border border-separator bg-surface-2 px-3 py-2 text-[15px] text-label transition duration-150 placeholder:text-label-3 focus:border-tint focus:outline-none focus-visible:outline-none focus:ring-3 focus:ring-tint/25 disabled:text-label-2";
 
 function Status({ state }: { state: FormState }) {
   if (state.error) return <Notice tone="bad">{state.error}</Notice>;
@@ -21,7 +22,7 @@ export function AgentForm({ agent, readOnly }: { agent: AgentConfig; readOnly: b
     <form action={action} className="flex max-w-2xl flex-col gap-5">
       <Status state={state} />
       <div className="flex flex-col gap-2">
-        <label htmlFor="first_message" className="text-sm font-medium">
+        <label htmlFor="first_message" className="text-[13px] font-medium text-label-2">
           Greeting
         </label>
         <input
@@ -31,10 +32,10 @@ export function AgentForm({ agent, readOnly }: { agent: AgentConfig; readOnly: b
           disabled={readOnly}
           className={input}
         />
-        <p className="text-xs text-zinc-500">The first thing callers hear. Keep it under two sentences.</p>
+        <p className="text-[13px] text-label-2">The first thing callers hear. Keep it under two sentences.</p>
       </div>
       <div className="flex flex-col gap-2">
-        <label htmlFor="system_prompt" className="text-sm font-medium">
+        <label htmlFor="system_prompt" className="text-[13px] font-medium text-label-2">
           Instructions
         </label>
         <textarea
@@ -43,15 +44,15 @@ export function AgentForm({ agent, readOnly }: { agent: AgentConfig; readOnly: b
           rows={12}
           defaultValue={agent.system_prompt}
           disabled={readOnly}
-          className={`${input} font-mono text-xs leading-relaxed`}
+          className={`${input} py-2 text-[15px] leading-[22px]`}
         />
-        <p className="text-xs text-zinc-500">
+        <p className="text-[13px] text-label-2">
           How the receptionist behaves. Saving creates version {agent.version + 1}; the current
           version stays on file.
         </p>
       </div>
       <div className="flex flex-col gap-2">
-        <label htmlFor="voice_id" className="text-sm font-medium">
+        <label htmlFor="voice_id" className="text-[13px] font-medium text-label-2">
           Voice ID
         </label>
         <input
@@ -61,7 +62,7 @@ export function AgentForm({ agent, readOnly }: { agent: AgentConfig; readOnly: b
           disabled={readOnly}
           className={`${input} font-mono`}
         />
-        <p className="text-xs text-zinc-500">
+        <p className="text-[13px] text-label-2">
           {agent.voice_provider} / {agent.voice_model}, language {agent.language}.
         </p>
       </div>
@@ -80,7 +81,7 @@ export function TenantForm({ timezone, readOnly }: { timezone: string; readOnly:
     <form action={action} className="flex max-w-md flex-col gap-4">
       <Status state={state} />
       <div className="flex flex-col gap-2">
-        <label htmlFor="timezone" className="text-sm font-medium">
+        <label htmlFor="timezone" className="text-[13px] font-medium text-label-2">
           Timezone
         </label>
         <input
@@ -90,7 +91,7 @@ export function TenantForm({ timezone, readOnly }: { timezone: string; readOnly:
           disabled={readOnly}
           className={`${input} font-mono`}
         />
-        <p className="text-xs text-zinc-500">IANA name, such as America/Chicago. Used for booking times.</p>
+        <p className="text-[13px] text-label-2">IANA name, such as America/Chicago. Used for booking times.</p>
       </div>
       {!readOnly && (
         <button type="submit" disabled={pending} className={`${btn.base} ${btn.primary} self-start`}>

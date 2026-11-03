@@ -23,7 +23,7 @@ function Field({
 }) {
   return (
     <div className="flex flex-col gap-2">
-      <label htmlFor={name} className="text-sm font-medium">
+      <label htmlFor={name} className="text-[13px] font-medium text-label-2">
         {label}
       </label>
       <input
@@ -33,9 +33,9 @@ function Field({
         autoComplete={autoComplete}
         defaultValue={defaultValue}
         required
-        className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
+        className="w-full rounded-[10px] border border-separator bg-surface-2 px-3 py-2.5 text-[15px] transition duration-150 focus:border-tint focus:outline-none focus:ring-3 focus:ring-tint/25"
       />
-      {hint && <p className="text-xs text-zinc-500">{hint}</p>}
+      {hint && <p className="text-[13px] text-label-2">{hint}</p>}
     </div>
   );
 }
@@ -60,7 +60,7 @@ export function LoginForm() {
         autoComplete="username"
       />
       <Field label="Password" name="password" type="password" autoComplete="current-password" />
-      <button type="submit" disabled={pending} className={`${btn.base} ${btn.primary} py-2`}>
+      <button type="submit" disabled={pending} className={`${btn.base} ${btn.filled} h-10 w-full text-[15px]`}>
         {pending ? "Signing in..." : "Sign in"}
       </button>
     </form>
