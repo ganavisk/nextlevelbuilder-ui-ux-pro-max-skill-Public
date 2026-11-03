@@ -259,3 +259,62 @@ async def test_a_retried_booking_replays_instead_of_taking_a_second_bay(three_ba
     )
     assert first.appointment_id == second.appointment_id
     assert await _bays_booked(three_bay_shop.id) == [1]
+
+
+@requires_services
+@pytest.mark.parametrize("send_confirmations", [True, False])
+async def test_the_booking_tool_saves_vehicle_details_and_respects_confirmations(
+    three_bay_shop, send_confirmations
+) -> None:
+    """End to end through the tool the voice agent calls: the tenant's
+    booking_fields arrive as tool arguments and land on the appointment, and a
+    test-lab booking (send_confirmations=False) queues no text or email."""
+    from app.modules.conversation.tools import ToolExecutor
+    from tests.fakes import FakeEmbeddingProvider, FakeLLMProvider
+    from tests.test_scheduling_tools import FakeRedis
+    from tests.test_tool_dispatch import _agent_config
+
+    shop = three_bay_shop
+    shop.settings = {
+        **shop.settings,
+        "scheduling": {
+            **shop.settings["scheduling"],
+            "booking_fields": [{"key": "vehicle", "description": "Vehicle"}],
+        },
+    }
+    redis = FakeRedis()
+    executor = ToolExecutor(
+        FakeLLMProvider(),
+        FakeEmbeddingProvider(),
+        calendar=FakeCalendarProvider(),
+        redis=redis,
+        send_confirmations=send_confirmations,
+    )
+    start_local = (datetime.now(UTC) + timedelta(days=14)).astimezone()
+    while start_local.weekday() >= 5:
+        start_local += timedelta(days=1)
+    spoken = await executor.dispatch(
+        tenant=shop,
+        call_id=None,
+        caller_e164="+15550009999",
+        agent_config=_agent_config(),
+        tool_name="book_appointment",
+        arguments={
+            "service": "Oil change",
+            "starts_at": start_local.strftime("%Y-%m-%dT10:00"),
+            "customer_name": "Priya",
+            "vehicle": "2019 Toyota RAV4",
+            "not_a_field": "ignored",
+        },
+    )
+    assert "all set" in spoken.lower(), spoken
+    assert (len(redis.pushed) == 1) is send_confirmations
+    assert ("text" in spoken) is send_confirmations
+
+    async with tenant_session(shop.id) as session:
+        details = (
+            await session.execute(
+                text("SELECT details FROM appointments WHERE tenant_id = :t"), {"t": str(shop.id)}
+            )
+        ).scalar_one()
+    assert details == {"vehicle": "2019 Toyota RAV4"}

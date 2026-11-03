@@ -17,6 +17,8 @@ live-call test.
 """
 
 import asyncio
+import copy
+import re
 import uuid
 from collections.abc import Awaitable
 from typing import Any, cast
@@ -44,9 +46,9 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "function": {
             "name": "answer_faq",
             "description": (
-                "Answer a caller's question using the practice's knowledge base. "
-                "Use this for any factual question about the practice — hours, "
-                "services, insurance, fees, location — instead of answering from "
+                "Answer a caller's question using the business's knowledge base. "
+                "Use this for any factual question about the business (hours, "
+                "services, prices, policies, location) instead of answering from "
                 "memory."
             ),
             "parameters": {
@@ -150,6 +152,46 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
 ]
 
 
+# Keys the booking tool already uses, which a tenant's booking_fields must not
+# shadow, and the shape a field key must have to be a safe JSON-schema property.
+_CORE_BOOKING_KEYS = {"service", "starts_at", "customer_name", "customer_email"}
+_FIELD_KEY = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
+
+
+def booking_fields(tenant: Tenant) -> list[dict[str, str]]:
+    """The extra details this business collects when booking
+    (`settings.scheduling.booking_fields`), e.g. an auto shop's vehicle and
+    mileage. Malformed or clashing entries are dropped rather than sent to the
+    voice vendor as a broken tool schema."""
+    scheduling = (tenant.settings or {}).get("scheduling", {}) or {}
+    fields = []
+    for entry in scheduling.get("booking_fields", []) or []:
+        key = str((entry or {}).get("key", ""))
+        if not _FIELD_KEY.match(key) or key in _CORE_BOOKING_KEYS:
+            continue
+        description = str(entry.get("description") or entry.get("label") or key)
+        fields.append({"key": key, "description": description})
+    return fields
+
+
+def tool_schemas_for(tenant: Tenant) -> list[dict[str, Any]]:
+    """TOOL_SCHEMAS specialised for one tenant: its service names in the
+    scheduling tools (so the model picks a real service, and the duration
+    lookup matches) and its booking_fields as optional booking parameters."""
+    schemas = copy.deepcopy(TOOL_SCHEMAS)
+    scheduling = (tenant.settings or {}).get("scheduling", {}) or {}
+    services = [str(s.get("name")) for s in scheduling.get("services", []) or [] if s.get("name")]
+    for schema in schemas:
+        function = schema["function"]
+        properties = function["parameters"]["properties"]
+        if services and function["name"] in ("check_availability", "book_appointment"):
+            properties["service"]["description"] = "One of: " + "; ".join(services)
+        if function["name"] == "book_appointment":
+            for field in booking_fields(tenant):
+                properties[field["key"]] = {"type": "string", "description": field["description"]}
+    return schemas
+
+
 class ToolExecutor:
     def __init__(
         self,
@@ -158,8 +200,12 @@ class ToolExecutor:
         calendar: CalendarProvider | None = None,
         redis: Redis | None = None,
         read_deadline_seconds: float = 8.0,
+        send_confirmations: bool = True,
     ) -> None:
         self._read_deadline = read_deadline_seconds
+        # False for test-lab sessions: a simulated booking is real, but its
+        # caller number is made up, so nothing is texted or emailed to it.
+        self._send_confirmations = send_confirmations
         self._llm = llm
         self._embeddings = embeddings
         # Optional so non-scheduling deployments (and unit tests) need no
@@ -218,6 +264,12 @@ class ToolExecutor:
                         customer_name=arguments.get("customer_name", ""),
                         customer_phone=caller_e164,
                         customer_email=arguments.get("customer_email"),
+                        details={
+                            f["key"]: str(arguments[f["key"]])
+                            for f in booking_fields(tenant)
+                            if arguments.get(f["key"])
+                        },
+                        send_confirmation=self._send_confirmations,
                     )
                 case "record_qualification_answer":
                     lead_id, score = await record_answer(

@@ -157,6 +157,8 @@ async def handle_book_appointment(
     customer_phone: str,
     customer_email: str | None,
     now: datetime | None = None,
+    details: dict[str, Any] | None = None,
+    send_confirmation: bool = True,
 ) -> str:
     now = now or datetime.now(UTC)
     start = parse_when(starts_at, tenant.timezone)
@@ -177,6 +179,7 @@ async def handle_book_appointment(
             customer_phone=customer_phone,
             customer_email=customer_email,
             idempotency_key=_idempotency_key(call_id, start),
+            details=details,
         )
     except SlotTakenError:
         alternatives = await _safe_alternatives(tenant, calendar, duration, now)
@@ -189,6 +192,10 @@ async def handle_book_appointment(
         logger.exception("booking_failed", tenant_id=str(tenant.id))
         return COULD_NOT_CHECK
 
+    when = describe_slots([slot], tenant.timezone, limit=1)
+    if not send_confirmation:
+        return f"You're all set for {when}."
+
     # Confirmations go out behind the call, never while the caller waits.
     await enqueue(
         redis,
@@ -199,8 +206,6 @@ async def handle_book_appointment(
             "appointment_id": str(outcome.appointment_id),
         },
     )
-
-    when = describe_slots([slot], tenant.timezone, limit=1)
     channel = "an email and a text" if customer_email else "a text"
     return f"You're all set for {when}. I'll send you {channel} to confirm."
 
