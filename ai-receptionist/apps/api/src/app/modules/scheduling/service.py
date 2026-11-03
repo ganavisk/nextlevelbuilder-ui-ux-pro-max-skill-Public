@@ -4,11 +4,13 @@
 
 No calendar API offers an atomic "create this event only if the slot is
 free". Two callers can both pass an availability check milliseconds apart and
-both attempt to book. So the serialization point is our own partial unique
-index on (tenant_id, starts_at) for confirmed appointments (migration 0005):
+both attempt to book. So the serialization point is our own exclusion
+constraint: no two confirmed appointments for one tenant may overlap in the
+same bay (migration 0008; it replaced 0005's same-start-time index).
 
-    1. Insert the appointment row first  ← the lock. Loser gets a unique
-       violation and is offered alternatives.
+    1. Insert the appointment row first  ← the lock, claiming the lowest
+       free bay. A conflict moves on to the next bay; when every bay
+       conflicts the caller lost the race and is offered alternatives.
     2. Only the winner writes to the calendar.
     3. If the calendar write then fails, the reservation is released so the
        slot does not stay phantom-booked.
@@ -20,8 +22,9 @@ failing to release on error is how "ghost" appointments appear.
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 
 from app.core.db import table_of, tenant_session
@@ -43,6 +46,16 @@ class SlotTakenError(Exception):
     """The slot was booked by someone else between offer and confirmation."""
 
 
+def bay_count(tenant: Tenant) -> int:
+    """How many appointments the business can run at once
+    (`settings.scheduling.bays`; 1 when unset, e.g. a single-chair practice)."""
+    scheduling = (tenant.settings or {}).get("scheduling", {}) or {}
+    try:
+        return max(1, int(scheduling.get("bays", 1)))
+    except (TypeError, ValueError):
+        return 1
+
+
 @dataclass(frozen=True)
 class BookingOutcome:
     appointment_id: uuid.UUID
@@ -60,8 +73,9 @@ async def find_available_slots(
     min_notice_hours: int = 0,
     now: datetime | None = None,
 ) -> list[TimeSlot]:
-    """Calendar busy periods ∪ our own confirmed appointments, subtracted from
-    the tenant's business hours.
+    """The tenant's business hours, minus calendar busy periods (which block
+    every bay), keeping slots where at least one bay is free of our own
+    confirmed appointments.
 
     Both sources matter: the calendar may hold events booked elsewhere, and
     our own table may hold a booking whose calendar write is still in flight.
@@ -72,7 +86,7 @@ async def find_available_slots(
     async with tenant_session(tenant.id) as session:
         rows = (
             await session.execute(
-                select(Appointment.starts_at, Appointment.ends_at).where(
+                select(Appointment.starts_at, Appointment.ends_at, Appointment.bay).where(
                     Appointment.tenant_id == tenant.id,
                     Appointment.status == "confirmed",
                     Appointment.ends_at > window_start,
@@ -80,7 +94,9 @@ async def find_available_slots(
                 )
             )
         ).all()
-    busy.extend(TimeSlot(start=r.starts_at, end=r.ends_at) for r in rows)
+    bay_bookings: dict[int, list[TimeSlot]] = {}
+    for r in rows:
+        bay_bookings.setdefault(r.bay, []).append(TimeSlot(start=r.starts_at, end=r.ends_at))
 
     return available_slots(
         business_hours=tenant.business_hours,
@@ -91,6 +107,8 @@ async def find_available_slots(
         busy_periods=busy,
         now=now,
         min_notice_hours=min_notice_hours,
+        bay_bookings=bay_bookings,
+        bays=bay_count(tenant),
     )
 
 
@@ -105,41 +123,32 @@ async def book_appointment(
     customer_phone: str,
     customer_email: str | None,
     idempotency_key: str,
+    details: dict[str, Any] | None = None,
 ) -> BookingOutcome:
-    """Reserve, then write to the calendar. Raises SlotTakenError if another
-    booking won the race."""
+    """Reserve a bay, then write to the calendar. Raises SlotTakenError if
+    every bay was taken between the offer and this booking."""
     existing = await _find_by_idempotency_key(tenant.id, idempotency_key)
     if existing is not None:
         logger.info("booking_replayed", appointment_id=str(existing))
         return BookingOutcome(appointment_id=existing, slot=slot, already_existed=True)
 
-    # ── 1. Reserve. The unique index decides the winner. ──
-    try:
-        async with tenant_session(tenant.id) as session:
-            appointment = Appointment(
-                tenant_id=tenant.id,
-                call_id=call_id,
-                service=service,
-                starts_at=slot.start,
-                ends_at=slot.end,
-                status="confirmed",
-                idempotency_key=idempotency_key,
-                customer_name=customer_name,
-                customer_phone=customer_phone,
-                customer_email=customer_email,
-                timezone=tenant.timezone,
-            )
-            session.add(appointment)
-            await session.flush()
-            appointment_id = appointment.id
-    except IntegrityError:
-        # Either the slot is taken or this exact booking was inserted
-        # concurrently; the idempotency lookup distinguishes them.
-        replay = await _find_by_idempotency_key(tenant.id, idempotency_key)
-        if replay is not None:
-            return BookingOutcome(appointment_id=replay, slot=slot, already_existed=True)
-        logger.info("slot_taken", tenant_id=str(tenant.id), starts_at=slot.start.isoformat())
-        raise SlotTakenError(str(slot.start)) from None
+    bays = bay_count(tenant)
+    # ── 1. Reserve. The exclusion constraint decides each bay's winner. ──
+    reserved = await _reserve_first_free_bay(
+        tenant=tenant,
+        bays=bays,
+        call_id=call_id,
+        slot=slot,
+        service=service,
+        customer_name=customer_name,
+        customer_phone=customer_phone,
+        customer_email=customer_email,
+        idempotency_key=idempotency_key,
+        details=details or {},
+    )
+    if isinstance(reserved, BookingOutcome):
+        return reserved  # this exact booking was inserted concurrently: a replay
+    appointment_id, bay = reserved
 
     # ── 2. Calendar write, now that we hold the slot. ──
     try:
@@ -147,11 +156,12 @@ async def book_appointment(
             BookingRequest(
                 tenant_id=tenant.id,
                 slot=slot,
-                summary=f"{service} — {customer_name}".strip(" —"),
+                summary=_event_summary(service, customer_name, bay if bays > 1 else None),
                 attendee_name=customer_name,
                 attendee_phone=customer_phone,
                 attendee_email=customer_email,
                 idempotency_key=idempotency_key,
+                blocks_time=bays == 1,
             )
         )
     except Exception:
@@ -171,10 +181,79 @@ async def book_appointment(
     logger.info(
         "appointment_booked",
         appointment_id=str(appointment_id),
+        bay=bay,
         starts_at=slot.start.isoformat(),
         external_event_id=result.external_event_id,
     )
     return BookingOutcome(appointment_id=appointment_id, slot=slot, already_existed=False)
+
+
+def _event_summary(service: str, customer_name: str, bay: int | None) -> str:
+    title = f"{service} — {customer_name}".strip(" —")
+    return f"Bay {bay} · {title}" if bay is not None else title
+
+
+async def _reserve_first_free_bay(
+    *,
+    tenant: Tenant,
+    bays: int,
+    call_id: uuid.UUID | None,
+    slot: TimeSlot,
+    service: str,
+    customer_name: str,
+    customer_phone: str,
+    customer_email: str | None,
+    idempotency_key: str,
+    details: dict[str, Any],
+) -> tuple[uuid.UUID, int] | BookingOutcome:
+    """Insert the appointment into bay 1, 2, ... until one is free.
+
+    Each attempt is its own transaction, so a conflict in bay 1 does not abort
+    the attempt on bay 2, and it holds a per-bay advisory lock (see below). A
+    conflict can also be this very booking, inserted concurrently by a retried
+    webhook; the idempotency lookup tells the two apart and turns that case
+    into a replay rather than a false "taken".
+    """
+    for bay in range(1, bays + 1):
+        try:
+            async with tenant_session(tenant.id) as session:
+                # One inserter per (tenant, bay) at a time. An exclusion
+                # constraint inserts first and checks second, so two
+                # simultaneous conflicting inserts can each wait on the other
+                # and Postgres aborts one as a deadlock, which would reach the
+                # caller as "trouble with the calendar" instead of "taken".
+                # (The old unique index had btree's own handling for this.)
+                # The lock is released at commit; the constraint stays the
+                # guarantee.
+                await session.execute(
+                    text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+                    {"key": f"booking:{tenant.id}:{bay}"},
+                )
+                appointment = Appointment(
+                    tenant_id=tenant.id,
+                    call_id=call_id,
+                    service=service,
+                    starts_at=slot.start,
+                    ends_at=slot.end,
+                    status="confirmed",
+                    idempotency_key=idempotency_key,
+                    customer_name=customer_name,
+                    customer_phone=customer_phone,
+                    customer_email=customer_email,
+                    timezone=tenant.timezone,
+                    bay=bay,
+                    details=details,
+                )
+                session.add(appointment)
+                await session.flush()
+                return appointment.id, bay
+        except IntegrityError:
+            replay = await _find_by_idempotency_key(tenant.id, idempotency_key)
+            if replay is not None:
+                return BookingOutcome(appointment_id=replay, slot=slot, already_existed=True)
+            continue  # this bay is taken for (part of) the slot; try the next
+    logger.info("slot_taken", tenant_id=str(tenant.id), starts_at=slot.start.isoformat())
+    raise SlotTakenError(str(slot.start))
 
 
 async def _find_by_idempotency_key(tenant_id: uuid.UUID, key: str) -> uuid.UUID | None:

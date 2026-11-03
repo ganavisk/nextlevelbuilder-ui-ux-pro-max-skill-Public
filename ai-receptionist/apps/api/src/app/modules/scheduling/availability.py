@@ -87,6 +87,17 @@ def subtract_busy(slots: list[TimeSlot], busy_periods: list[TimeSlot]) -> list[T
     return [s for s in slots if not any(overlaps(s, b) for b in busy_periods)]
 
 
+def free_bay(slot: TimeSlot, bay_bookings: dict[int, list[TimeSlot]], bays: int) -> int | None:
+    """The lowest-numbered bay with nothing overlapping `slot`, or None.
+
+    Lowest-first keeps bookings packed into the same bays, which is how a
+    service writer fills a board and leaves whole bays free for long jobs."""
+    for bay in range(1, max(1, bays) + 1):
+        if not any(overlaps(slot, booked) for booked in bay_bookings.get(bay, [])):
+            return bay
+    return None
+
+
 def available_slots(
     *,
     business_hours: dict[str, list[list[str]]],
@@ -98,7 +109,12 @@ def available_slots(
     now: datetime,
     min_notice_hours: int = 0,
     step_minutes: int = DEFAULT_STEP_MINUTES,
+    bay_bookings: dict[int, list[TimeSlot]] | None = None,
+    bays: int = 1,
 ) -> list[TimeSlot]:
+    """`busy_periods` block the whole business (closures, the calendar's own
+    events). `bay_bookings` are the business's appointments by bay: a slot
+    stays bookable while at least one of `bays` is free for all of it."""
     candidates = generate_candidate_slots(
         business_hours=business_hours,
         timezone=timezone,
@@ -109,7 +125,10 @@ def available_slots(
         min_notice_hours=min_notice_hours,
         step_minutes=step_minutes,
     )
-    return subtract_busy(candidates, busy_periods)
+    open_slots = subtract_busy(candidates, busy_periods)
+    if not bay_bookings:
+        return open_slots
+    return [s for s in open_slots if free_bay(s, bay_bookings, bays) is not None]
 
 
 def describe_slots(slots: list[TimeSlot], timezone: str, limit: int = 3) -> str:

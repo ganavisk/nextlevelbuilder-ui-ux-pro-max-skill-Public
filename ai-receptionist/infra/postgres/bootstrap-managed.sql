@@ -35,6 +35,7 @@ SELECT format(
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;   -- gen_random_uuid()
 CREATE EXTENSION IF NOT EXISTS vector;     -- pgvector, knowledge embeddings
+CREATE EXTENSION IF NOT EXISTS btree_gist;   -- per-bay no-overlap constraint (migration 0008)
 
 -- The app runs the migrations, so it owns its tables. Ownership is harmless
 -- for isolation: migration 0001 sets FORCE ROW LEVEL SECURITY, which subjects

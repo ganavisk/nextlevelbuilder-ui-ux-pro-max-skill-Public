@@ -27,6 +27,9 @@ class BookingRequest:
     attendee_phone: str
     attendee_email: str | None = None
     idempotency_key: str | None = None
+    # False for multi-bay tenants: the event is informational, and must not show
+    # as busy, or one booked bay would make the calendar block the whole shop.
+    blocks_time: bool = True
 
 
 @dataclass(frozen=True)

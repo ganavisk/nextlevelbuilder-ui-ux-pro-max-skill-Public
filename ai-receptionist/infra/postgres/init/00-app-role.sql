@@ -13,6 +13,7 @@
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";   -- gen_random_uuid()
 CREATE EXTENSION IF NOT EXISTS vector;       -- pgvector, for knowledge embeddings
+CREATE EXTENSION IF NOT EXISTS btree_gist;   -- per-bay no-overlap constraint (migration 0008)
 
 DO $$
 BEGIN

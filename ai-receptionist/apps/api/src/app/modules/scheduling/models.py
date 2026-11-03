@@ -2,9 +2,10 @@
 
 import uuid
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import DateTime, ForeignKey, SmallInteger, Text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -33,3 +34,7 @@ class Appointment(Base):
     customer_phone: Mapped[str] = mapped_column(Text, default="")
     customer_email: Mapped[str | None] = mapped_column(Text, nullable=True)
     timezone: Mapped[str] = mapped_column(Text, default="UTC")
+    # Which of the tenant's parallel resources this occupies (migration 0008).
+    bay: Mapped[int] = mapped_column(SmallInteger, default=1)
+    # Booking-time answers the tenant asked to collect (scheduling.booking_fields).
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)

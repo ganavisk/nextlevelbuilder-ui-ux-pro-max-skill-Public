@@ -491,3 +491,17 @@ async def test_hot_path_requests_carry_a_timeout(connected_tenant) -> None:
         assert client.timeout.read is not None and client.timeout.read <= 10
     finally:
         await client.aclose()
+
+
+@requires_services
+@pytest.mark.parametrize(("blocks_time", "expected"), [(True, "opaque"), (False, "transparent")])
+async def test_event_transparency_follows_blocks_time(
+    connected_tenant, blocks_time, expected
+) -> None:
+    """Multi-bay tenants book transparent events, which Google leaves out of
+    free/busy; everyone else's bookings keep blocking time as before."""
+    tenant_id, _ = connected_tenant
+    provider = GoogleCalendarProvider(_settings())
+    seen = _mock(provider, lambda r: httpx.Response(200, json={"id": "evt"}))
+    await provider.book(_booking(tenant_id, blocks_time=blocks_time))
+    assert json.loads(seen[0].content)["transparency"] == expected

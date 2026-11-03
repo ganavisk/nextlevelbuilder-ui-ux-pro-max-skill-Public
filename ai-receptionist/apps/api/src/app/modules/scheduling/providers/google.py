@@ -187,6 +187,10 @@ class GoogleCalendarProvider(CalendarProvider):
             "start": {"dateTime": request.slot.start.astimezone(UTC).isoformat()},
             "end": {"dateTime": request.slot.end.astimezone(UTC).isoformat()},
             "attendees": attendees,
+            # Transparent events don't count in free/busy, so a multi-bay shop's
+            # own bookings never make the calendar look fully booked. Its real
+            # blocks (closures, staff time off) stay opaque and still apply.
+            "transparency": "opaque" if request.blocks_time else "transparent",
         }
         if request.idempotency_key:
             # Google dedupes on event id; a repeated booking returns the
