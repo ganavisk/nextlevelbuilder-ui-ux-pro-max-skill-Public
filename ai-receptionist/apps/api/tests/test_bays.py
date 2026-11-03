@@ -322,3 +322,55 @@ async def test_the_booking_tool_saves_vehicle_details_and_respects_confirmations
             )
         ).scalar_one()
     assert details == {"vehicle": "2019 Toyota RAV4"}
+
+
+@requires_services
+async def test_the_booking_tool_texts_the_number_the_caller_gave(three_bay_shop) -> None:
+    """The agent passes `customer_phone` when the caller wants the text at
+    another number; it replaces the caller ID on the appointment, and
+    `customer_phone` can't be claimed by a tenant's booking field."""
+    from app.modules.conversation.tools import ToolExecutor, booking_fields
+    from tests.fakes import FakeEmbeddingProvider, FakeLLMProvider
+    from tests.test_scheduling_tools import FakeRedis
+    from tests.test_tool_dispatch import _agent_config
+
+    shop = three_bay_shop
+    shop.settings = {
+        **shop.settings,
+        "scheduling": {
+            **shop.settings["scheduling"],
+            "booking_fields": [{"key": "customer_phone", "description": "clash"}],
+        },
+    }
+    assert booking_fields(shop) == []
+    executor = ToolExecutor(
+        FakeLLMProvider(),
+        FakeEmbeddingProvider(),
+        calendar=FakeCalendarProvider(),
+        redis=FakeRedis(),
+    )
+    start_local = (datetime.now(UTC) + timedelta(days=14)).astimezone()
+    while start_local.weekday() >= 5:
+        start_local += timedelta(days=1)
+    spoken = await executor.dispatch(
+        tenant=shop,
+        call_id=None,
+        caller_e164="+15550009999",
+        agent_config=_agent_config(),
+        tool_name="book_appointment",
+        arguments={
+            "service": "Oil change",
+            "starts_at": start_local.strftime("%Y-%m-%dT10:00"),
+            "customer_name": "Priya",
+            "customer_phone": "720-555-0142",
+        },
+    )
+    assert spoken.endswith("I'll text a confirmation to 7 2 0, 5 5 5, 0 1 4 2."), spoken
+    async with tenant_session(shop.id) as session:
+        phone = (
+            await session.execute(
+                text("SELECT customer_phone FROM appointments WHERE tenant_id = :t"),
+                {"t": str(shop.id)},
+            )
+        ).scalar_one()
+    assert phone == "+17205550142"

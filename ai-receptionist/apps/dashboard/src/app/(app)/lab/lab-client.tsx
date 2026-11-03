@@ -460,6 +460,17 @@ function ToolBench({
         <Field label="Customer name" htmlFor="bench-name">
           <input id="bench-name" value={values.customer_name} onChange={set("customer_name")} autoComplete="off" className={fieldInput} />
         </Field>
+        <Field label="Text confirmation to (optional)" htmlFor="bench-phone">
+          <input
+            id="bench-phone"
+            type="tel"
+            value={values.customer_phone ?? ""}
+            onChange={set("customer_phone")}
+            placeholder="Caller ID"
+            autoComplete="off"
+            className={fieldInput}
+          />
+        </Field>
         {status.booking_fields.map((f) => (
           <Field key={f.key} label={f.description} htmlFor={`bench-${f.key}`}>
             <input id={`bench-${f.key}`} value={values[f.key] ?? ""} onChange={set(f.key)} autoComplete="off" className={fieldInput} />
@@ -491,7 +502,13 @@ function ToolBench({
       case "check_availability":
         return pick("service", "preferred_time");
       case "book_appointment":
-        return pick("service", "starts_at", "customer_name", ...status.booking_fields.map((f) => f.key));
+        return pick(
+          "service",
+          "starts_at",
+          "customer_name",
+          "customer_phone",
+          ...status.booking_fields.map((f) => f.key),
+        );
       case "answer_faq":
         return pick("question");
       default:

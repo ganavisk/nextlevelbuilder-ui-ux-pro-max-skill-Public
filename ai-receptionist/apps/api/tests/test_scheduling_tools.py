@@ -18,6 +18,8 @@ from app.modules.scheduling.providers.base import TimeSlot
 from app.modules.scheduling.tools import (
     COULD_NOT_CHECK,
     NOTHING_AVAILABLE,
+    NUMBER_NEEDED,
+    NUMBER_UNCLEAR,
     handle_book_appointment,
     handle_check_availability,
     parse_when,
@@ -340,3 +342,79 @@ async def test_calendar_failure_during_booking_takes_a_message(booking_tenant) -
     assert result == COULD_NOT_CHECK
     # Nothing was booked, so nothing may be confirmed to the customer.
     assert redis.pushed == []
+
+
+# ── the confirmation number ─────────────────────────────────────────────
+
+
+async def _book(tenant, redis, *, caller_id="+15550001111", **extra):
+    return await handle_book_appointment(
+        tenant=tenant,
+        calendar=FakeCalendarProvider(),
+        redis=redis,
+        call_id=None,
+        service="cleaning",
+        starts_at="2026-09-15T09:00",
+        customer_name="Dana",
+        customer_phone=caller_id,
+        customer_email=None,
+        now=NOW,
+        **extra,
+    )
+
+
+def _stored_phones(tenant_id) -> list[str]:
+    engine = _sync_engine()
+    with engine.begin() as conn:
+        conn.execute(text("SELECT set_config('app.tenant_id', :t, true)"), {"t": str(tenant_id)})
+        rows = conn.execute(
+            text("SELECT customer_phone FROM appointments WHERE tenant_id = :t"),
+            {"t": str(tenant_id)},
+        ).all()
+    engine.dispose()
+    return [r[0] for r in rows]
+
+
+@requires_services
+async def test_a_different_number_is_stored_and_read_back_digit_by_digit(booking_tenant) -> None:
+    result = await _book(booking_tenant, FakeRedis(), callback_phone="(303) 555-0199")
+    assert result.endswith("I'll text a confirmation to 3 0 3, 5 5 5, 0 1 9 9.")
+    assert _stored_phones(booking_tenant.id) == ["+13035550199"]  # what the texts go to
+
+
+@requires_services
+async def test_giving_the_number_you_are_calling_from_reads_as_such(booking_tenant) -> None:
+    result = await _book(
+        booking_tenant, FakeRedis(), caller_id="+13035550199", callback_phone="303 555 0199"
+    )
+    assert result.endswith("to the number you're calling from.")
+
+
+@requires_services
+async def test_a_misheard_number_books_nothing_and_asks_again(booking_tenant) -> None:
+    redis = FakeRedis()
+    result = await _book(booking_tenant, redis, callback_phone="303-555-019")
+    assert result == NUMBER_UNCLEAR
+    assert _stored_phones(booking_tenant.id) == [] and redis.pushed == []
+
+
+@requires_services
+async def test_a_blocked_caller_id_is_asked_for_a_number_first(booking_tenant) -> None:
+    redis = FakeRedis()
+    assert await _book(booking_tenant, redis, caller_id="") == NUMBER_NEEDED
+    assert _stored_phones(booking_tenant.id) == [] and redis.pushed == []
+    # ...and the same booking goes through once they give one.
+    result = await _book(booking_tenant, redis, caller_id="", callback_phone="303-555-0199")
+    assert result.startswith("You're all set")
+    assert _stored_phones(booking_tenant.id) == ["+13035550199"]
+
+
+@requires_services
+async def test_no_text_is_promised_when_the_business_sends_none(booking_tenant) -> None:
+    booking_tenant.settings = {
+        **booking_tenant.settings,
+        "notifications": {"sms_confirmation": False, "email_confirmation": True},
+    }
+    result = await _book(booking_tenant, FakeRedis())
+    assert "text" not in result
+    assert result.endswith("9 am.")

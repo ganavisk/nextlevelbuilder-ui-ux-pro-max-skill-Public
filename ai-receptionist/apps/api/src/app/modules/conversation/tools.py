@@ -125,6 +125,15 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                         "type": "string",
                         "description": "Optional — ask for it to send an email confirmation",
                     },
+                    "customer_phone": {
+                        "type": "string",
+                        "description": (
+                            "Only if the caller wants the confirmation text at a different "
+                            "number than the one they're calling from, or the tool asked "
+                            "for a number. Digits as said, with the area code, e.g. "
+                            "303-555-0199. Read it back digit by digit and get a yes first."
+                        ),
+                    },
                 },
                 "required": ["service", "starts_at", "customer_name"],
             },
@@ -154,7 +163,13 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
 
 # Keys the booking tool already uses, which a tenant's booking_fields must not
 # shadow, and the shape a field key must have to be a safe JSON-schema property.
-_CORE_BOOKING_KEYS = {"service", "starts_at", "customer_name", "customer_email"}
+_CORE_BOOKING_KEYS = {
+    "service",
+    "starts_at",
+    "customer_name",
+    "customer_email",
+    "customer_phone",
+}
 _FIELD_KEY = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
 
 
@@ -269,6 +284,7 @@ class ToolExecutor:
                         customer_name=arguments.get("customer_name", ""),
                         customer_phone=caller_e164,
                         customer_email=arguments.get("customer_email"),
+                        callback_phone=arguments.get("customer_phone"),
                         details={
                             f["key"]: str(arguments[f["key"]])
                             for f in booking_fields(tenant)

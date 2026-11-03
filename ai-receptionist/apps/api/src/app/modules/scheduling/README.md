@@ -99,7 +99,16 @@ not a reader:
 - **Read-back on booking**: the service, the tenant's `confirm_detail`
   booking field (an auto shop's vehicle), the date and time, and where the
   confirmation goes ("the number you're calling from"). This is the caller's
-  last chance to catch a misheard detail.
+  last chance to catch a misheard detail. Only channels the tenant actually
+  sends (`notifications.*_confirmation`) are promised.
+- **A different number**: `book_appointment` takes an optional
+  `customer_phone` when the caller wants the text elsewhere (a work line, a
+  borrowed phone). It is normalized by `core/phone.py`, stored in place of the
+  caller ID, and read back as single digits ("3 0 3, 5 5 5, 0 1 9 9"). A
+  number that can't be whole (a dropped digit, no area code) books nothing:
+  the caller is asked to say it again. With no caller ID and no number given,
+  the agent asks for one before booking. The caller ID itself is trusted as
+  the carrier sent it; the strict checks apply only to numbers a person said.
 
 ## Idempotency
 

@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 from redis.asyncio import Redis
 
 from app.core.logging import get_logger
+from app.core.phone import caller_id_e164, spoken_digits, to_e164
 from app.core.queue import CONFIRMATIONS_QUEUE, enqueue
 from app.modules.scheduling.availability import describe_slots, pick_offers
 from app.modules.scheduling.providers.base import CalendarProvider, TimeSlot
@@ -30,6 +31,14 @@ logger = get_logger(__name__)
 
 DEFAULT_DURATION_MINUTES = 30
 SEARCH_HORIZON_DAYS = 14
+
+# Spoken when the caller gave a number we can't use. Nothing is booked, so
+# the agent can ask again and retry the same booking.
+NUMBER_UNCLEAR = (
+    "Sorry, I didn't get the whole number. Could you say it again, starting with the area code?"
+)
+# No caller ID and no number given: a booking nobody can confirm or reach.
+NUMBER_NEEDED = "Before I book that, what's the best number to reach you at?"
 
 COULD_NOT_CHECK = (
     "I'm having trouble reaching the calendar right now. Let me take your "
@@ -171,11 +180,25 @@ async def handle_book_appointment(
     details: dict[str, Any] | None = None,
     send_confirmation: bool = True,
     idempotency_scope: str | None = None,
+    callback_phone: str | None = None,
 ) -> str:
+    """`customer_phone` is the caller ID. `callback_phone` is a number the
+    caller asked us to use instead (a work line, a borrowed phone, no caller
+    ID); when given, it is the one stored and texted."""
     now = now or datetime.now(UTC)
     start = parse_when(starts_at, tenant.timezone)
     if start is None:
         return "I didn't quite catch the time — could you say that again?"
+
+    caller_id = caller_id_e164(customer_phone)
+    if callback_phone:
+        phone = to_e164(callback_phone)
+        if phone is None:
+            return NUMBER_UNCLEAR
+    elif caller_id is None:
+        return NUMBER_NEEDED
+    else:
+        phone = caller_id
 
     duration = resolve_duration(tenant, service)
     slot = TimeSlot(start=start, end=start + timedelta(minutes=duration))
@@ -188,7 +211,7 @@ async def handle_book_appointment(
             slot=slot,
             service=service,
             customer_name=customer_name,
-            customer_phone=customer_phone,
+            customer_phone=phone,
             customer_email=customer_email,
             idempotency_key=_idempotency_key(call_id, start, idempotency_scope),
             details=details,
@@ -222,19 +245,21 @@ async def handle_book_appointment(
             "appointment_id": str(outcome.appointment_id),
         },
     )
-    # Say where the confirmation goes: the booking uses the caller ID, which
-    # is not what every caller expects (work lines, a borrowed phone).
-    if customer_phone and customer_email:
-        sent = (
-            " I'll text a confirmation to the number you're calling from, and email it to you too."
-        )
-    elif customer_phone:
-        sent = " I'll text a confirmation to the number you're calling from."
-    elif customer_email:
-        sent = " I'll email you a confirmation."
-    else:
-        sent = ""
-    return summary + sent
+    # Say where the confirmation goes, and only promise what the
+    # confirmations worker will send (same settings it reads). A number the
+    # caller gave is read back digit by digit: their last chance to catch a
+    # misheard one.
+    notify = (tenant.settings or {}).get("notifications", {}) or {}
+    texts = bool(notify.get("sms_confirmation", True))
+    emails = bool(notify.get("email_confirmation", True) and customer_email)
+    target = "the number you're calling from" if phone == caller_id else spoken_digits(phone)
+    if texts and emails:
+        return f"{summary} I'll text a confirmation to {target}, and email it to you too."
+    if texts:
+        return f"{summary} I'll text a confirmation to {target}."
+    if emails:
+        return f"{summary} I'll email you a confirmation."
+    return summary
 
 
 def _booked_phrase(tenant: Tenant, service: str, details: dict[str, Any] | None) -> str:
