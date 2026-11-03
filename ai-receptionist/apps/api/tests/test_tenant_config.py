@@ -98,8 +98,22 @@ def test_the_shared_prompt_is_not_dental_specific() -> None:
     prompt = assemble_system_prompt(_tenant_from(doc), _agent_from(doc))
     assert "practice" not in prompt.lower()
     assert "insurance" not in prompt.lower().split("you must never discuss")[0]
-    assert "Year, make and model" in prompt  # booking fields are asked for
+    assert "Approximate mileage" in prompt  # booking fields are asked for
     assert "record exactly one of: drivable, needs_tow" in prompt  # choice options shown
+
+
+def test_a_booking_field_that_repeats_a_question_is_not_asked_twice() -> None:
+    """The auto shop asks for the vehicle and the concern as qualification
+    questions, and needs both on the appointment. The caller hears each once."""
+    doc = _load(CONFIG_DIR / "example-auto.yaml")
+    prompt = assemble_system_prompt(_tenant_from(doc), _agent_from(doc))
+    booking = prompt[prompt.index("Before calling book_appointment") :]
+    booking = booking[: booking.index("\n\n")] if "\n\n" in booking else booking
+    assert "Approximate mileage" in booking
+    assert "Year, make and model" not in booking  # already a question
+    assert "For vehicle, concern, reuse the caller's answer" in booking
+    assert "never ask for something they have already told you" in prompt
+    assert "skip a question that clearly doesn't apply" in prompt
 
 
 def test_tenants_without_booking_fields_get_the_standard_tools() -> None:

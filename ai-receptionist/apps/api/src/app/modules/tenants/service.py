@@ -29,8 +29,38 @@ def _format_qualification_flow(questions: list[dict[str, Any]]) -> str:
     return (
         "\n\nAsk these qualification questions naturally over the course of the call "
         "(not as a rigid checklist) and call record_qualification_answer with the "
-        "matching key immediately after each answer:\n" + "\n".join(lines)
+        "matching key immediately after each answer. Callers are often busy or on the "
+        "move: never ask for something they have already told you (record it from what "
+        "they said), and skip a question that clearly doesn't apply to what they're "
+        "calling about.\n" + "\n".join(lines)
     )
+
+
+def _format_booking_fields(fields: list[dict[str, str]], questions: list[dict[str, Any]]) -> str:
+    """What to collect before book_appointment. A booking field with the same
+    key as a qualification question (an auto shop's vehicle and concern) is
+    filled from that answer, never asked a second time."""
+    if not fields:
+        return ""
+    asked = {q["key"] for q in questions}
+    new = [f for f in fields if f["key"] not in asked]
+    shared = [f["key"] for f in fields if f["key"] in asked]
+    parts = []
+    if new:
+        parts.append(
+            "Before calling book_appointment, also ask for: "
+            + "; ".join(f["description"] for f in new)
+            + "."
+        )
+    parts.append("Pass each answer in its matching book_appointment field.")
+    if shared:
+        parts.append(
+            "For "
+            + ", ".join(shared)
+            + ", reuse the caller's answer to the matching question above instead of "
+            "asking again."
+        )
+    return "\n\n" + " ".join(parts)
 
 
 def assemble_system_prompt(tenant: Tenant, config: AgentConfig) -> str:
@@ -45,14 +75,7 @@ def assemble_system_prompt(tenant: Tenant, config: AgentConfig) -> str:
         else ""
     )
     qualification_block = _format_qualification_flow(config.qualification)
-    fields = booking_fields(tenant)
-    booking_block = (
-        "\n\nBefore calling book_appointment, also ask for: "
-        + "; ".join(f["description"] for f in fields)
-        + ". Pass each answer in its matching book_appointment field."
-        if fields
-        else ""
-    )
+    booking_block = _format_booking_fields(booking_fields(tenant), config.qualification)
     escalation = config.escalation_policy.get(
         "callback_promise", "Someone from the team will call you back."
     )

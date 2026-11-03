@@ -61,7 +61,7 @@ qualification:
     question: "What's going on with it, or what service is it due for?"
     type: text
   - key: safe_to_drive
-    question: "Is the vehicle safe to drive in, or does it need a tow?"
+    question: "Can you drive it in, or will it need a tow?"
     type: choice
     options: [drivable, needs_tow]
     scoring: { needs_tow: 40 }      # stranded customer: highest priority
@@ -112,10 +112,15 @@ scheduling:
     - { name: "A/C performance check", duration_minutes: 60 }
   min_notice_hours: 1
   # Asked for before booking and saved on the appointment for the technician.
+  # `vehicle` and `concern` share keys with qualification questions above, so
+  # the receptionist reuses those answers instead of asking twice.
   booking_fields:
     - { key: vehicle, description: "Year, make and model of the vehicle" }
     - { key: mileage, description: "Approximate mileage" }
     - { key: concern, description: "What the customer wants done, or the symptoms in their words" }
+  # Read back with the service when confirming ("oil change for your 2019
+  # Toyota RAV4, ..."), the detail most worth the caller double-checking.
+  confirm_detail: vehicle
 
 escalation:
   mode: voicemail_callback

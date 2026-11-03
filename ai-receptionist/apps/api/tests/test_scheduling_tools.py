@@ -111,12 +111,27 @@ async def test_availability_is_offered_in_spoken_form() -> None:
         tenant=_tenant(),
         calendar=FakeCalendarProvider(),
         service="cleaning",
+        preferred_time="2026-09-15T09:05",  # between slots: offer the nearest
+        now=NOW,
+    )
+    assert result.startswith("I have tomorrow at ")  # NOW is Monday; Tuesday is tomorrow
+    assert "9 am" in result
+    assert "2026" not in result  # no ISO timestamps read aloud
+    assert result.endswith("Which works best for you?")
+
+
+@requires_services
+async def test_an_open_requested_time_is_simply_confirmed() -> None:
+    """If the time they asked for is free, say yes, without making the caller
+    listen to (and remember) a list of other times."""
+    result = await handle_check_availability(
+        tenant=_tenant(),
+        calendar=FakeCalendarProvider(),
+        service="cleaning",
         preferred_time="2026-09-15T09:00",
         now=NOW,
     )
-    assert "Tuesday at 9 am" in result
-    assert "2026" not in result  # no ISO timestamps read aloud
-    assert result.endswith("Which works best for you?")
+    assert result == "Yes, tomorrow at 9 am is open. Shall I book it?"
 
 
 @requires_services
@@ -139,8 +154,8 @@ async def test_availability_widens_when_the_preferred_day_is_full() -> None:
     assert result != NOTHING_AVAILABLE
     # Tuesday is full, so nothing on Tuesday may be offered — but the caller
     # still gets real times rather than being turned away.
-    assert "Tuesday" not in result
-    assert "Monday" in result
+    assert "tomorrow" not in result
+    assert "today" in result  # NOW is Monday morning: the nearest open times
 
 
 @requires_services
@@ -233,8 +248,10 @@ async def test_successful_booking_confirms_and_queues_messages(booking_tenant) -
         customer_email="dana@example.com",
         now=NOW,
     )
-    assert "You're all set for Tuesday at 9 am" in result
-    assert "an email and a text" in result
+    # Read back with the date (a week-later Tuesday must not sound like this
+    # one), and say where the confirmation goes.
+    assert result.startswith("You're all set: cleaning, tomorrow, September 15th at 9 am.")
+    assert "text a confirmation to the number you're calling from, and email it" in result
     assert len(redis.pushed) == 1
     queue, payload = redis.pushed[0]
     assert queue == "queue:confirmations"
@@ -255,7 +272,7 @@ async def test_booking_without_email_promises_only_a_text(booking_tenant) -> Non
         customer_email=None,
         now=NOW,
     )
-    assert "a text to confirm" in result
+    assert result.endswith("I'll text a confirmation to the number you're calling from.")
     assert "email" not in result
 
 

@@ -280,6 +280,7 @@ async def test_the_booking_tool_saves_vehicle_details_and_respects_confirmations
         "scheduling": {
             **shop.settings["scheduling"],
             "booking_fields": [{"key": "vehicle", "description": "Vehicle"}],
+            "confirm_detail": "vehicle",
         },
     }
     redis = FakeRedis()
@@ -308,6 +309,9 @@ async def test_the_booking_tool_saves_vehicle_details_and_respects_confirmations
         },
     )
     assert "all set" in spoken.lower(), spoken
+    # The caller hears what was booked, including the detail most worth
+    # checking, so a misheard vehicle is caught before they hang up.
+    assert "oil change for your 2019 Toyota RAV4" in spoken, spoken
     assert (len(redis.pushed) == 1) is send_confirmations
     assert ("text" in spoken) is send_confirmations
 

@@ -83,6 +83,24 @@ Per-tenant `scheduling.booking_fields` (e.g. vehicle, mileage, concern) are
 added to the `book_appointment` tool schema for that tenant only and stored
 in `appointments.details` (JSONB). No vertical-specific code.
 
+## How times are spoken
+
+Tool results are read aloud, so `availability.py` formats them for a listener,
+not a reader:
+
+- **Days relative to today**, in the business's timezone: "today",
+  "tomorrow", a weekday within the coming week, and a date beyond that
+  ("Tuesday, November 10th"). A bare weekday a week out is heard as *this*
+  one. Confirmations always include the date.
+- **Offers that are real choices** (`pick_offers`): at least 90 minutes apart,
+  centred on the time the caller asked for, the day named once ("tomorrow at
+  8:30 am, 10 am, or 11:30 am"), and "noon" for 12 pm. If the requested time
+  is open, the answer is just "Yes, ... is open."
+- **Read-back on booking**: the service, the tenant's `confirm_detail`
+  booking field (an auto shop's vehicle), the date and time, and where the
+  confirmation goes ("the number you're calling from"). This is the caller's
+  last chance to catch a misheard detail.
+
 ## Idempotency
 
 A second unique index on `idempotency_key` distinguishes a *retry* from a

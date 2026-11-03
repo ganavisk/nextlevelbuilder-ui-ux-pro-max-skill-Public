@@ -17,7 +17,7 @@ from redis.asyncio import Redis
 
 from app.core.logging import get_logger
 from app.core.queue import CONFIRMATIONS_QUEUE, enqueue
-from app.modules.scheduling.availability import describe_slots
+from app.modules.scheduling.availability import describe_slots, pick_offers
 from app.modules.scheduling.providers.base import CalendarProvider, TimeSlot
 from app.modules.scheduling.service import (
     SlotTakenError,
@@ -126,7 +126,16 @@ async def handle_check_availability(
     if not slots:
         return NOTHING_AVAILABLE
 
-    spoken = describe_slots(slots, tenant.timezone, limit=3)
+    # The time they asked for is open: say so and stop. Listing other times
+    # as well only gives them something to remember for no reason.
+    if preferred and any(s.start == preferred for s in slots):
+        exact = describe_slots(
+            [next(s for s in slots if s.start == preferred)], tenant.timezone, now=now
+        )
+        return f"Yes, {exact} is open. Shall I book it?"
+
+    offers = pick_offers(slots, 3, preferred=preferred)
+    spoken = describe_slots(offers, tenant.timezone, limit=3, now=now)
     return f"I have {spoken}. Which works best for you?"
 
 
@@ -185,7 +194,7 @@ async def handle_book_appointment(
             details=details,
         )
     except SlotTakenError:
-        alternatives = await _safe_alternatives(tenant, calendar, duration, now)
+        alternatives = await _safe_alternatives(tenant, calendar, duration, now, near=start)
         if alternatives:
             return (
                 f"Ah — that one was just taken. I do have {alternatives}. Would any of those work?"
@@ -195,9 +204,13 @@ async def handle_book_appointment(
         logger.exception("booking_failed", tenant_id=str(tenant.id))
         return COULD_NOT_CHECK
 
-    when = describe_slots([slot], tenant.timezone, limit=1)
+    # Read back what was booked, with the date, not just a weekday: this is
+    # the caller's last chance to catch a misheard day, time or vehicle.
+    booked = _booked_phrase(tenant, service, details)
+    when = describe_slots([slot], tenant.timezone, limit=1, now=now, with_date=True)
+    summary = f"You're all set: {booked}, {when}."
     if not send_confirmation:
-        return f"You're all set for {when}."
+        return summary
 
     # Confirmations go out behind the call, never while the caller waits.
     await enqueue(
@@ -209,12 +222,35 @@ async def handle_book_appointment(
             "appointment_id": str(outcome.appointment_id),
         },
     )
-    channel = "an email and a text" if customer_email else "a text"
-    return f"You're all set for {when}. I'll send you {channel} to confirm."
+    # Say where the confirmation goes: the booking uses the caller ID, which
+    # is not what every caller expects (work lines, a borrowed phone).
+    if customer_phone and customer_email:
+        sent = (
+            " I'll text a confirmation to the number you're calling from, and email it to you too."
+        )
+    elif customer_phone:
+        sent = " I'll text a confirmation to the number you're calling from."
+    elif customer_email:
+        sent = " I'll email you a confirmation."
+    else:
+        sent = ""
+    return summary + sent
+
+
+def _booked_phrase(tenant: Tenant, service: str, details: dict[str, Any] | None) -> str:
+    """ "oil change for your 2019 Toyota RAV4". The detail named by the
+    tenant's `scheduling.confirm_detail` (one of its booking fields) is read
+    back with the service, so the caller hears the thing most worth checking.
+    The service's first letter is lowered for mid-sentence use unless it
+    starts an acronym ("A/C performance check")."""
+    phrase = service[:1].lower() + service[1:] if service[1:2].islower() else service
+    key = _scheduling_config(tenant).get("confirm_detail")
+    value = str((details or {}).get(key, "")).strip() if key else ""
+    return f"{phrase} for your {value}" if value else phrase
 
 
 async def _safe_alternatives(
-    tenant: Tenant, calendar: CalendarProvider, duration: int, now: datetime
+    tenant: Tenant, calendar: CalendarProvider, duration: int, now: datetime, *, near: datetime
 ) -> str:
     try:
         slots = await find_available_slots(
@@ -229,4 +265,5 @@ async def _safe_alternatives(
     except Exception:
         logger.exception("alternatives_lookup_failed", tenant_id=str(tenant.id))
         return ""
-    return describe_slots(slots, tenant.timezone, limit=2)
+    offers = pick_offers(slots, 2, preferred=near)
+    return describe_slots(offers, tenant.timezone, limit=2, now=now)
