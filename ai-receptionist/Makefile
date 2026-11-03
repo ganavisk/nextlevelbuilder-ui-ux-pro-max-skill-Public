@@ -49,8 +49,13 @@ crm:
 check-keys:
 	cd apps/api && ../../$(PY) -m app.preflight
 
+# Seed a demo tenant from config/tenants/example-$(TENANT).yaml.
+#   make seed                                      # dental
+#   make seed TENANT=auto NUMBER=+15550100003      # auto repair shop
+TENANT ?= dental
+NUMBER ?= +15550100001
 seed:
-	cd apps/api && ../../$(PY) scripts/seed_demo.py ../../config/tenants/example-dental.yaml
+	cd apps/api && ../../$(PY) scripts/seed_demo.py ../../config/tenants/example-$(TENANT).yaml --number $(NUMBER)
 
 # Push a tenant's agent config to the voice vendor and point its number at it.
 # Re-run after any prompt/knowledge/tool change. Override: make provision SLUG=...

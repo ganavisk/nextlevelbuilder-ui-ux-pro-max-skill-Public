@@ -201,11 +201,16 @@ class ToolExecutor:
         redis: Redis | None = None,
         read_deadline_seconds: float = 8.0,
         send_confirmations: bool = True,
+        booking_scope: str | None = None,
     ) -> None:
         self._read_deadline = read_deadline_seconds
         # False for test-lab sessions: a simulated booking is real, but its
         # caller number is made up, so nothing is texted or emailed to it.
         self._send_confirmations = send_confirmations
+        # Replaces the call as the booking's retry identity. The test lab's
+        # tool bench sets a fresh one per run: each run is a deliberate new
+        # booking, not a vendor retry of the last one.
+        self._booking_scope = booking_scope
         self._llm = llm
         self._embeddings = embeddings
         # Optional so non-scheduling deployments (and unit tests) need no
@@ -270,6 +275,7 @@ class ToolExecutor:
                             if arguments.get(f["key"])
                         },
                         send_confirmation=self._send_confirmations,
+                        idempotency_scope=self._booking_scope,
                     )
                 case "record_qualification_answer":
                     lead_id, score = await record_answer(

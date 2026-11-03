@@ -169,6 +169,7 @@ def _executor(
     calendar: CalendarProvider | None,
     redis: Redis,
     deadline_seconds: float,
+    booking_scope: str | None = None,
 ) -> ToolExecutor:
     return ToolExecutor(
         llm,
@@ -177,6 +178,7 @@ def _executor(
         redis=redis,
         read_deadline_seconds=deadline_seconds,
         send_confirmations=False,
+        booking_scope=booking_scope,
     )
 
 
@@ -247,6 +249,9 @@ async def run_bench_tool(
         calendar=calendar,
         redis=redis,
         deadline_seconds=deadline_seconds,
+        # Each bench run is its own booking. Chat turns keep the call as the
+        # retry identity, so a repeated tool call there replays, as on a call.
+        booking_scope=f"bench:{uuid.uuid4()}",
     )
     return await _run_tool(
         executor, tenant=tenant, call=call, config=config, tool=tool, arguments=arguments

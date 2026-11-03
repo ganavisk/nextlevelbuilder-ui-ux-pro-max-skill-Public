@@ -13,6 +13,7 @@ from app.core.util import Page
 from app.modules.scheduling.models import Appointment
 from app.modules.scheduling.schemas import AppointmentSummary
 from app.modules.scheduling.service import cancel_appointment
+from app.modules.telephony.models import Call
 
 router = APIRouter()
 
@@ -25,7 +26,11 @@ async def list_appointments(
     offset: int = Query(default=0, ge=0),
 ) -> Page[AppointmentSummary]:
     async with tenant_session(auth.tenant_id) as session:
-        stmt = select(Appointment).where(Appointment.tenant_id == auth.tenant_id)
+        stmt = (
+            select(Appointment, Call.direction)
+            .outerjoin(Call, Call.id == Appointment.call_id)
+            .where(Appointment.tenant_id == auth.tenant_id)
+        )
         count_stmt = (
             select(func.count())
             .select_from(Appointment)
@@ -39,8 +44,8 @@ async def list_appointments(
             await session.execute(
                 stmt.order_by(Appointment.starts_at.desc()).limit(limit).offset(offset)
             )
-        ).scalars()
-        items = [AppointmentSummary.model_validate(r) for r in rows]
+        ).all()
+        items = [_summary(a, direction) for a, direction in rows]
     return Page(items=items, total=total)
 
 
@@ -52,4 +57,14 @@ async def cancel(
     appointment = await cancel_appointment(
         tenant_id=auth.tenant_id, appointment_id=appointment_id, calendar=calendar
     )
-    return AppointmentSummary.model_validate(appointment)
+    async with tenant_session(auth.tenant_id) as session:
+        direction = (
+            await session.execute(select(Call.direction).where(Call.id == appointment.call_id))
+        ).scalar_one_or_none()
+    return _summary(appointment, direction)
+
+
+def _summary(appointment: Appointment, direction: str | None) -> AppointmentSummary:
+    summary = AppointmentSummary.model_validate(appointment)
+    summary.simulated = direction == "simulated"
+    return summary

@@ -1,6 +1,7 @@
 # AI Receptionist Platform
 
-Multi-tenant, voice-first AI receptionist for legal and dental practices.
+Multi-tenant, voice-first AI receptionist for appointment-driven businesses:
+dental and legal practices, and auto repair shops with several service bays.
 Answers calls, answers FAQs from a per-tenant knowledge base, qualifies leads,
 books appointments, syncs CRM, and sends confirmations — configured per
 business, never custom-coded per business.
@@ -70,6 +71,36 @@ make dashboard-install        # npm install
 make dashboard-dev            # http://localhost:3000, talks to the API on :8000
 ```
 
+### Try it without a phone: the Test Lab
+
+```bash
+make seed TENANT=auto NUMBER=+15550100003   # Ridgeline Auto Care: 3 bays
+```
+
+Sign in at `localhost:3000` as `ridgeline-auto-care` /
+`owner@ridgelineauto.example` / `demo-password-not-for-production` and open
+**Test Lab**. There you can:
+- **Chat** with the real receptionist as a caller (needs `ANTHROPIC_API_KEY`).
+- **Run any tool directly** from the tool bench. This needs no keys.
+- **Watch the day board** fill bay by bay. Book the same 10:00 slot four
+  times from the bench: bays 1–3 fill, and the fourth is offered
+  alternatives.
+
+Test calls make real bookings but send no texts or emails. They are
+excluded from analytics and CRM, are marked **test** on the Appointments page,
+and **Discard** removes everything they created. See
+`apps/api/src/app/modules/testlab/README.md`.
+
+### Adding a business type
+
+A new vertical is a YAML file, not code: see `config/tenants/example-auto.yaml`.
+- `scheduling.bays` sets parallel capacity.
+- `scheduling.booking_fields` sets the extra details the receptionist must
+  collect before booking (vehicle, mileage, concern), stored on the
+  appointment.
+- `persona` carries the safety rules (for example "don't drive it, we'll
+  arrange a tow").
+
 In staging/production the API refuses to start unless `SECRET_KEY` is a random
 value of at least 32 characters (`openssl rand -hex 32`) — it signs dashboard
 login tokens.
@@ -93,7 +124,7 @@ handler fails to process is retried with jitter, not lost.
 ```
 apps/api/          FastAPI modular monolith (source of truth for the backend)
 apps/dashboard/    Next.js dashboard (call history, analytics, settings) — see its README
-config/tenants/    Example tenant configurations (dental, legal)
+config/tenants/    Example tenant configurations (dental, legal, auto repair)
 infra/postgres/    Container init: extensions + the non-superuser app role
 infra/             Deploy blueprints (Railway/Vercel) — populated in Phase 8
 .github/workflows/ CI (activates when this folder becomes the repo root)

@@ -429,3 +429,75 @@ def test_another_tenants_admin_cannot_reach_a_session(lab) -> None:
     finally:
         with engine.begin() as conn:
             conn.execute(text("DELETE FROM tenants WHERE id = :id"), {"id": str(other_id)})
+
+
+@requires_services
+def test_each_bench_booking_is_a_new_booking_so_capacity_can_be_tested(lab) -> None:
+    """On a real call, the same slot booked twice is a retry and replays. On the
+    bench every run is deliberate: four runs at one 10:00 slot fill the three
+    bays and the fourth is told it's taken."""
+    headers, session_id = _start(lab)
+    results = []
+    for name in ("Ana", "Ben", "Cy", "Dee"):
+        r = lab["client"].post(
+            f"/api/v1/test-lab/sessions/{session_id}/tools/book_appointment",
+            headers=headers,
+            json={
+                "arguments": {
+                    "service": "Oil change",
+                    "starts_at": lab["starts_at"],
+                    "customer_name": name,
+                }
+            },
+        )
+        results.append(r.json()["result"].lower())
+    assert sum("all set" in r for r in results) == 3
+    assert "taken" in results[3]
+    bays = _rows(
+        lab["engine"],
+        lab["tenant_id"],
+        "SELECT bay FROM appointments WHERE tenant_id = :t AND status = 'confirmed' ORDER BY bay",
+    )
+    assert [b.bay for b in bays] == [1, 2, 3]
+
+
+@requires_services
+def test_a_repeated_booking_within_a_chat_still_replays(lab) -> None:
+    """The model calling book_appointment twice for the same slot in one call
+    must not take two bays."""
+    headers, session_id = _start(lab)
+    client = lab["client"]
+    client.post(
+        f"/api/v1/test-lab/sessions/{session_id}/messages", headers=headers, json={"text": "book"}
+    )
+    lab["llm"].requests.clear()  # the script books again on its next turn
+    client.post(
+        f"/api/v1/test-lab/sessions/{session_id}/messages", headers=headers, json={"text": "again"}
+    )
+    bays = _rows(
+        lab["engine"], lab["tenant_id"], "SELECT bay FROM appointments WHERE tenant_id = :t"
+    )
+    assert [b.bay for b in bays] == [1]
+
+
+@requires_services
+def test_the_appointments_list_marks_test_bookings(lab) -> None:
+    """Test Lab bookings are real rows, so staff must be able to tell them
+    apart from customers' on the Appointments page (and after cancelling)."""
+    headers, session_id = _start(lab)
+    client = lab["client"]
+    client.post(
+        f"/api/v1/test-lab/sessions/{session_id}/tools/book_appointment",
+        headers=headers,
+        json={
+            "arguments": {
+                "service": "Oil change",
+                "starts_at": lab["starts_at"],
+                "customer_name": "Ana",
+            }
+        },
+    )
+    items = client.get("/api/v1/appointments", headers=headers).json()["items"]
+    assert len(items) == 1 and items[0]["simulated"] is True
+    cancelled = client.post(f"/api/v1/appointments/{items[0]['id']}/cancel", headers=headers)
+    assert cancelled.status_code == 200 and cancelled.json()["simulated"] is True

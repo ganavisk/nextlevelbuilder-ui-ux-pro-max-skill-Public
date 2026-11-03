@@ -130,7 +130,7 @@ async def handle_check_availability(
     return f"I have {spoken}. Which works best for you?"
 
 
-def _idempotency_key(call_id: uuid.UUID | None, start: datetime) -> str:
+def _idempotency_key(call_id: uuid.UUID | None, start: datetime, scope: str | None = None) -> str:
     """Scoped to the call and the slot: a retried webhook replays the same
     booking, while a genuine second booking on the same call gets its own key.
 
@@ -140,6 +140,8 @@ def _idempotency_key(call_id: uuid.UUID | None, start: datetime) -> str:
     second caller would be told they're booked into the first caller's
     appointment.
     """
+    if scope is not None:
+        return f"{scope}:{start.isoformat()}"
     if call_id is None:
         return f"anon:{uuid.uuid4()}:{start.isoformat()}"
     return f"call:{call_id}:{start.isoformat()}"
@@ -159,6 +161,7 @@ async def handle_book_appointment(
     now: datetime | None = None,
     details: dict[str, Any] | None = None,
     send_confirmation: bool = True,
+    idempotency_scope: str | None = None,
 ) -> str:
     now = now or datetime.now(UTC)
     start = parse_when(starts_at, tenant.timezone)
@@ -178,7 +181,7 @@ async def handle_book_appointment(
             customer_name=customer_name,
             customer_phone=customer_phone,
             customer_email=customer_email,
-            idempotency_key=_idempotency_key(call_id, start),
+            idempotency_key=_idempotency_key(call_id, start, idempotency_scope),
             details=details,
         )
     except SlotTakenError:

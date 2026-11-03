@@ -26,18 +26,27 @@ This is the part worth understanding before changing anything here.
 No calendar API offers an atomic "create this event only if the slot is
 free". Two callers can pass an availability check milliseconds apart and both
 try to book. So the calendar cannot be the arbiter — our own database is.
-The serialization point is a partial unique index (migration 0005):
+The serialization point is an exclusion constraint (migration 0008, which
+replaced the original per-start-time unique index from 0005):
 
 ```sql
-CREATE UNIQUE INDEX appointments_no_double_booking
-    ON appointments (tenant_id, starts_at) WHERE status = 'confirmed';
+ALTER TABLE appointments ADD CONSTRAINT appointments_no_overlap_per_bay
+    EXCLUDE USING gist (
+        tenant_id WITH =, bay WITH =,
+        tstzrange(starts_at, ends_at, '[)') WITH &&
+    ) WHERE (status = 'confirmed');
 ```
+
+It refuses any two confirmed appointments that *overlap* in the same bay, not
+only ones that start at the same instant, so a 90-minute brake job can't be
+double-booked by an oil change starting half an hour later. It needs the
+`btree_gist` extension (trusted, created by `infra/postgres/`).
 
 `service.book_appointment` therefore runs in this order, and the order is the
 design:
 
 1. **Insert the appointment row.** This is the lock. The loser of a race gets
-   a unique violation and is offered alternatives.
+   a constraint violation and is offered alternatives.
 2. **Write to the calendar,** only once the slot is held.
 3. **Release the reservation** if that write fails, so a vendor outage does
    not leave the slot phantom-booked.
@@ -46,8 +55,33 @@ Doing it the other way round (calendar first) cannot be serialized. Skipping
 step 3 is how "ghost" appointments appear — held in our table, absent from
 the practice's calendar.
 
-Because the index is partial on `status = 'confirmed'`, cancelling an
+Because the constraint is partial on `status = 'confirmed'`, cancelling an
 appointment frees the slot immediately with no extra bookkeeping.
+
+## Service bays (parallel capacity)
+
+A tenant with `scheduling.bays: N` in its config (an auto shop's lifts; any
+business with several identical resources) can take N overlapping
+appointments. Single-resource tenants omit it and behave exactly as before
+(one bay).
+
+- **Availability** offers a slot while *any* bay is free for its whole
+  duration (`availability.free_bay`).
+- **Booking** tries bay 1, 2, ... N, each attempt in its own transaction, and
+  takes the lowest free one; when every bay refuses, the caller is offered
+  alternatives. Each attempt first takes
+  `pg_advisory_xact_lock(hash(tenant, bay))`: concurrent inserts that conflict
+  under an exclusion constraint otherwise *deadlock* rather than fail cleanly
+  (seen intermittently with four racers in `tests/test_bays.py`; none in 25
+  runs with the lock).
+- **Calendar.** With more than one bay, events are written
+  `transparency: transparent` and titled "Bay N · ...", so the shop's single
+  Google calendar keeps a full record without its free/busy blocking the whole
+  shop after one booking. Capacity lives in our table, not in free/busy.
+
+Per-tenant `scheduling.booking_fields` (e.g. vehicle, mileage, concern) are
+added to the `book_appointment` tool schema for that tenant only and stored
+in `appointments.details` (JSONB). No vertical-specific code.
 
 ## Idempotency
 
@@ -58,6 +92,10 @@ while a genuine second caller is told the time is taken. Keys are scoped to
 the call and the slot (`call:<id>:<iso-start>`); without a call id there is
 no retry identity, so the key is made unique per attempt instead (keying on
 the slot alone would let one caller be booked into another's appointment).
+
+The Test Lab tool bench passes its own scope per run (`bench:<uuid>`), since
+every bench booking is deliberate: four runs at one slot must fill three bays
+and be refused once, not replay the first booking three times.
 
 ## Hot path
 
