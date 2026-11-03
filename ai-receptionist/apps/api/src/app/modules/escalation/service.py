@@ -29,12 +29,16 @@ async def create_callback_request(
     reason: str,
     preferred_window: str | None = None,
     voicemail_transcript: str | None = None,
+    callback_e164: str | None = None,
 ) -> uuid.UUID:
+    """`callback_e164` is a number the caller asked to be called back on
+    instead of the one they called from (already normalized)."""
     async with tenant_session(tenant_id) as session:
         request = CallbackRequest(
             tenant_id=tenant_id,
             call_id=call_id,
             caller_e164=caller_e164,
+            callback_e164=callback_e164,
             reason=reason,
             preferred_window=preferred_window,
             voicemail_transcript=voicemail_transcript,

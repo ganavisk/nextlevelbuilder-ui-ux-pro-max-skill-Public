@@ -12,6 +12,12 @@ America, and the agent reads the number back before using it.
 
 import re
 
+# Spoken when the caller gave a number we can't use. Nothing is saved, so the
+# agent can ask again and retry.
+NUMBER_UNCLEAR = (
+    "Sorry, I didn't get the whole number. Could you say it again, starting with the area code?"
+)
+
 _NANP = re.compile(r"^1?([2-9]\d{2})([2-9]\d{2})(\d{4})$")
 
 

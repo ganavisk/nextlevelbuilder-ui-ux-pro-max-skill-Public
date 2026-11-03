@@ -84,7 +84,9 @@ def assemble_system_prompt(tenant: Tenant, config: AgentConfig) -> str:
         f"For any factual question about the business (hours, services, prices, "
         f"policies, location) use the answer_faq tool rather than answering from memory.\n\n"
         f"If the caller asks for a human or you cannot help, use the request_callback "
-        f'tool: collect their name, number, and reason first, then say: "{escalation}"'
+        f"tool: collect their name and reason first (and a number only if they want a "
+        f"call back somewhere other than the phone they're calling from), then say: "
+        f'"{escalation}"'
     )
 
 

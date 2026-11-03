@@ -77,7 +77,14 @@ export default async function CallbacksPage({
           <tbody>
             {data.items.map((r) => (
               <tr key={r.id} className={tr}>
-                <td className={`${td} num whitespace-nowrap font-medium`}>{formatPhone(r.caller_e164)}</td>
+                <td className={`${td} num whitespace-nowrap`}>
+                  <span className="font-medium">{formatPhone(r.callback_e164 ?? r.caller_e164)}</span>
+                  {r.callback_e164 && (
+                    <span className="block text-[13px] text-label-2">
+                      Called from {r.caller_e164 ? formatPhone(r.caller_e164) : "a blocked number"}
+                    </span>
+                  )}
+                </td>
                 <td className={`${td} max-w-[42ch]`}>
                   <Reason text={r.reason} />
                 </td>

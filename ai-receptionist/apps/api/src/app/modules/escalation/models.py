@@ -19,6 +19,9 @@ class CallbackRequest(Base):
         UUID(as_uuid=True), ForeignKey("calls.id"), nullable=True
     )
     caller_e164: Mapped[str] = mapped_column(Text)
+    # A different number the caller asked to be called back on; None means
+    # call `caller_e164` (migration 0010).
+    callback_e164: Mapped[str | None] = mapped_column(Text, nullable=True)
     reason: Mapped[str] = mapped_column(Text, default="")
     voicemail_transcript: Mapped[str | None] = mapped_column(Text, nullable=True)
     preferred_window: Mapped[str | None] = mapped_column(Text, nullable=True)

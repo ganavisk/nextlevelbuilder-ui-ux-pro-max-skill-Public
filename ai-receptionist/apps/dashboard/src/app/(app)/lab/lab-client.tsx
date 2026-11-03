@@ -491,6 +491,17 @@ function ToolBench({
         <Field label="Best time to call" htmlFor="bench-window">
           <input id="bench-window" value={values.preferred_window ?? ""} onChange={set("preferred_window")} placeholder="e.g. after 3pm" className={fieldInput} />
         </Field>
+        <Field label="Call back on (optional)" htmlFor="bench-callback-phone">
+          <input
+            id="bench-callback-phone"
+            type="tel"
+            value={values.callback_phone ?? ""}
+            onChange={set("callback_phone")}
+            placeholder="Caller ID"
+            autoComplete="off"
+            className={fieldInput}
+          />
+        </Field>
       </>
     ),
   };
@@ -511,8 +522,11 @@ function ToolBench({
         );
       case "answer_faq":
         return pick("question");
-      default:
-        return pick("reason", "preferred_window");
+      default: {
+        // Same tool argument as booking; a separate form key so each tab keeps its own value.
+        const args = pick("reason", "preferred_window");
+        return values.callback_phone ? { ...args, customer_phone: values.callback_phone } : args;
+      }
     }
   };
 

@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 from redis.asyncio import Redis
 
 from app.core.logging import get_logger
-from app.core.phone import caller_id_e164, spoken_digits, to_e164
+from app.core.phone import NUMBER_UNCLEAR, caller_id_e164, spoken_digits, to_e164
 from app.core.queue import CONFIRMATIONS_QUEUE, enqueue
 from app.modules.scheduling.availability import describe_slots, pick_offers
 from app.modules.scheduling.providers.base import CalendarProvider, TimeSlot
@@ -32,11 +32,6 @@ logger = get_logger(__name__)
 DEFAULT_DURATION_MINUTES = 30
 SEARCH_HORIZON_DAYS = 14
 
-# Spoken when the caller gave a number we can't use. Nothing is booked, so
-# the agent can ask again and retry the same booking.
-NUMBER_UNCLEAR = (
-    "Sorry, I didn't get the whole number. Could you say it again, starting with the area code?"
-)
 # No caller ID and no number given: a booking nobody can confirm or reach.
 NUMBER_NEEDED = "Before I book that, what's the best number to reach you at?"
 

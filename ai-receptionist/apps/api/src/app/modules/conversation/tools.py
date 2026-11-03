@@ -26,6 +26,7 @@ from typing import Any, cast
 from redis.asyncio import Redis
 
 from app.core.logging import get_logger
+from app.core.phone import NUMBER_UNCLEAR, caller_id_e164, spoken_digits, to_e164
 from app.modules.conversation.faq import NO_ANSWER_FALLBACK, answer_faq
 from app.modules.conversation.providers.base import EmbeddingProvider, LLMProvider
 from app.modules.conversation.qualification import record_answer
@@ -39,6 +40,9 @@ from app.modules.scheduling.tools import (
 from app.modules.tenants.models import AgentConfig, Tenant
 
 logger = get_logger(__name__)
+
+# No caller ID and no number given: ask before saving a callback.
+CALLBACK_NUMBER_NEEDED = "What's the best number for us to call you back on?"
 
 TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
@@ -153,6 +157,15 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "properties": {
                     "reason": {"type": "string"},
                     "preferred_window": {"type": "string"},
+                    "customer_phone": {
+                        "type": "string",
+                        "description": (
+                            "Only if the caller wants to be called back on a different "
+                            "number than the one they're calling from, or the tool asked "
+                            "for a number. Digits as said, with the area code, e.g. "
+                            "303-555-0199. Read it back digit by digit and get a yes first."
+                        ),
+                    },
                 },
                 "required": ["reason"],
             },
@@ -305,20 +318,38 @@ class ToolExecutor:
                     logger.info("qualification_answer_recorded", lead_id=str(lead_id), score=score)
                     return "Got it, thank you."
                 case "request_callback":
+                    # A callback nobody can return is worse than none: the
+                    # caller believes someone will ring. So a misheard number,
+                    # or no number at all, saves nothing and asks.
+                    caller_id = caller_id_e164(caller_e164)
+                    callback: str | None = None
+                    if arguments.get("customer_phone"):
+                        callback = to_e164(arguments["customer_phone"])
+                        if callback is None:
+                            return NUMBER_UNCLEAR
+                    elif caller_id is None:
+                        return CALLBACK_NUMBER_NEEDED
+                    different = callback is not None and callback != caller_id
                     request_id = await create_callback_request(
                         tenant_id=tenant_id,
                         call_id=call_id,
                         caller_e164=caller_e164,
+                        callback_e164=callback if different else None,
                         reason=arguments.get("reason", ""),
                         preferred_window=arguments.get("preferred_window"),
                     )
                     logger.info("callback_requested", request_id=str(request_id))
-                    return cast(
+                    promise = cast(
                         str,
                         agent_config.escalation_policy.get(
                             "callback_promise", "Someone from the team will call you back."
                         ),
                     )
+                    if different and callback is not None:
+                        # Read back as single digits: the caller's last chance
+                        # to catch a wrong one before they wait for a call.
+                        return f"{promise} I have your number as {spoken_digits(callback)}."
+                    return promise
                 case _:
                     logger.warning("unknown_tool_call", tool_name=tool_name)
                     return "I'm not able to do that right now, but I can take a message."
