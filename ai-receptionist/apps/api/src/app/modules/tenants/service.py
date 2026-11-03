@@ -73,6 +73,7 @@ async def build_agent_definition(tenant: Tenant, tenant_id: uuid.UUID) -> AgentD
         system_prompt=assemble_system_prompt(tenant, config),
         first_message=config.first_message,
         voice_id=config.voice_id,
+        timezone=tenant.timezone,
         voice_provider=config.voice_provider,
         voice_model=config.voice_model,
         language=config.language,

@@ -44,14 +44,37 @@ class ToolCallRequest:
     arguments: dict[str, Any]
 
 
+def clock_instructions(*, now: str, today: str, timezone: str) -> str:
+    """Tell the model what time it is at the business.
+
+    Without this the model has no idea what "tomorrow" or "next Tuesday" is,
+    and the scheduling tools take an absolute local ISO time it has to work
+    out. A vendor agent's prompt is provisioned once and reused for every
+    call, so `now` and `today` can't be baked in as values: each adapter
+    passes its own per-call template (see VapiProvider). The Test Lab passes
+    real values. Both use this one wording.
+    """
+    return (
+        f"Current local time at the business: {now} ({timezone}). Work out dates the "
+        f'caller gives relative to it ("tomorrow", "next Tuesday"), and give times to '
+        f"tools in local ISO 8601, e.g. {today}T09:00."
+    )
+
+
 @dataclass(frozen=True)
 class AgentDefinition:
-    """What the vendor needs to run a tenant's agent: prompt, voice, tools."""
+    """What the vendor needs to run a tenant's agent: prompt, voice, tools.
+
+    `system_prompt` is time-independent. The adapter appends the current
+    local time per call (`clock_instructions`) in the vendor's own template
+    syntax, using `timezone`."""
 
     tenant_id: uuid.UUID
     system_prompt: str
     first_message: str
     voice_id: str
+    # The business's IANA timezone: the clock the agent is told it is.
+    timezone: str
     # Empty means "vendor default". `voice_provider` names the TTS vendor
     # (e.g. "11labs"), so a tenant can use ElevenLabs voices while the
     # voice-agent orchestration stays with the primary vendor.

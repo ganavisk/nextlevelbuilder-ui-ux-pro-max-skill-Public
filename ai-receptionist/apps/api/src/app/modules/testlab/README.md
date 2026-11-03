@@ -65,9 +65,9 @@ Routes under `/api/v1/test-lab`, all `admin` or `owner` only:
 
 ## Known risks / future improvements
 
-- The simulator adds the current local date and time to the prompt so the
-  model can resolve "tomorrow". Check the production voice prompt does the
-  same through Vapi variables before relying on relative dates in real calls.
+- The simulator tells the model the current local time with the same
+  sentence real calls get (`telephony.providers.base.clock_instructions`).
+  The lab fills in real values; on a phone call Vapi fills them in per call.
 - Text is not speech: the lab does not exercise ASR errors, barge-in, or
   latency the caller would hear. Use a real test call for those.
 - At most `MAX_TOOL_ROUNDS` (5) tool rounds per turn; a model stuck calling

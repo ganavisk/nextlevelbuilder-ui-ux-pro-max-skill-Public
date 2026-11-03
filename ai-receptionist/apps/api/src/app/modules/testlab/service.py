@@ -41,6 +41,7 @@ from app.modules.scheduling.models import Appointment
 from app.modules.scheduling.providers.base import CalendarProvider
 from app.modules.scheduling.service import bay_count, cancel_appointment
 from app.modules.telephony.models import Call, CallEvent, Transcript
+from app.modules.telephony.providers.base import clock_instructions
 from app.modules.tenants.models import AgentConfig, Tenant
 from app.modules.tenants.service import assemble_system_prompt
 
@@ -106,14 +107,17 @@ def lab_system_prompt(tenant: Tenant, config: AgentConfig, *, now: datetime, gre
     what was already said, and today's date (the model needs it to turn
     'Tuesday morning' into the ISO time the scheduling tools take)."""
     local = now.astimezone(ZoneInfo(tenant.timezone))
+    clock = clock_instructions(
+        now=f"{local:%A, %B %d, %Y, %I:%M %p}",
+        today=f"{local:%Y-%m-%d}",
+        timezone=tenant.timezone,
+    )
     return (
         assemble_system_prompt(tenant, config)
         + "\n\nThis is a phone call; keep replies short and conversational, no lists or "
         + "markdown.\n"
         + f'You already greeted the caller with: "{greeting}"\n'
-        + f"Current local time at the business: {local:%A, %B %d, %Y, %I:%M %p} "
-        + f"({tenant.timezone}). Give times to tools in local ISO 8601, e.g. "
-        + f"{local:%Y-%m-%d}T09:00."
+        + clock
     )
 
 

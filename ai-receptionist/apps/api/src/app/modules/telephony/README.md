@@ -21,10 +21,21 @@ Redis call-session keys (`call:<vendor_call_id>`, TTL-bounded), jobs on
 - The webhook path does no LLM work and no integration I/O (hot-path latency
   budget from Phase 1 §3.3).
 - All handlers are idempotent — vendors retry webhooks.
+- The agent is told the business's current local time on every call. The
+  provisioned prompt is static, so `providers/vapi.py` appends
+  `clock_instructions` with Vapi's per-call LiquidJS template
+  (`{{"now" | date: "...", "<tenant tz>"}}`; Vapi's `now` is UTC). Without it
+  the model guesses what "tomorrow" is. A new adapter must do the same in its
+  own template syntax.
 
 **Future improvements:** Retell adapter; tool-call dispatch to the tool
 executor (Phase 4); in-call transcript streaming persistence.
 
 **Known risks:** Vapi payload shapes are covered by fixtures but not yet
 contract-validated against the live sandbox (waits on API keys — M1 live
-test); drift is confined to `providers/vapi.py`.
+test); drift is confined to `providers/vapi.py`. That includes the date
+template: the tests check what we send, but only a live call proves Vapi
+renders it.
+- The timezone is baked into the template when the agent is provisioned.
+  Changing it in Settings (or any prompt/voice change) only reaches calls
+  after `make provision SLUG=...`.

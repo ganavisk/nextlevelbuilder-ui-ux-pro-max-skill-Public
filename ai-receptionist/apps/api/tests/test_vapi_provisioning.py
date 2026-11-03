@@ -38,6 +38,7 @@ def _definition(**overrides) -> AgentDefinition:
         "system_prompt": "You are a receptionist.",
         "first_message": "Thanks for calling!",
         "voice_id": "voice-abc",
+        "timezone": "America/Denver",
         "tools": TOOL_SCHEMAS,
         "max_duration_seconds": 900,
     }
@@ -80,7 +81,7 @@ async def test_new_agent_payload_carries_server_url_secret_and_tools() -> None:
         "book_appointment",
         "request_callback",
     } == tool_names
-    assert body["model"]["messages"][0]["content"] == "You are a receptionist."
+    assert body["model"]["messages"][0]["content"].startswith("You are a receptionist.")
     assert body["voice"]["voiceId"] == "voice-abc"
 
 
@@ -191,3 +192,69 @@ async def test_attach_number_repoints_existing_instead_of_duplicating() -> None:
     assert number_id == "num-existing"
     assert [r.method for r in seen] == ["GET", "PATCH"]
     assert json.loads(seen[1].content) == {"assistantId": "asst-2"}
+
+
+async def test_prompt_tells_every_call_todays_date_in_the_business_timezone() -> None:
+    """The prompt is provisioned once but must give each call the current
+    local date, or "tomorrow at 9" is booked on whatever date the model
+    guesses. Vapi fills `now` (UTC) per call; the date filter converts it to
+    the tenant's zone. These are the exact LiquidJS templates Vapi documents."""
+    provider = VapiProvider(_settings())
+    seen = _mock(provider, lambda r: httpx.Response(200, json={"id": "asst-1"}))
+
+    await provider.sync_agent(_definition(timezone="America/Denver"))
+
+    prompt = json.loads(seen[0].content)["model"]["messages"][0]["content"]
+    assert prompt.startswith("You are a receptionist.\n\n")
+    assert (
+        'Current local time at the business: {{"now" | date: "%A, %B %d, %Y, %I:%M %p", '
+        '"America/Denver"}} (America/Denver).'
+    ) in prompt
+    assert '{{"now" | date: "%Y-%m-%d", "America/Denver"}}T09:00' in prompt
+
+
+def _render_like_vapi(template: str, now) -> str:
+    """Stand-in for Vapi's LiquidJS pass over the two date filters we emit."""
+    import re
+    from zoneinfo import ZoneInfo
+
+    def sub(m: re.Match[str]) -> str:
+        return now.astimezone(ZoneInfo(m.group(2))).strftime(m.group(1))
+
+    return re.sub(r'\{\{"now" \| date: "([^"]+)", "([^"]+)"\}\}', sub, template)
+
+
+async def test_rendered_prompt_matches_what_the_test_lab_tells_the_model() -> None:
+    """Rendered for a given instant, the voice prompt's clock line is the
+    same sentence the Test Lab uses, so rehearsals test what callers get.
+    Late evening in Denver is already tomorrow in UTC: the local date must win."""
+    from datetime import UTC, datetime
+
+    from app.modules.telephony.providers.base import clock_instructions
+
+    provider = VapiProvider(_settings())
+    seen = _mock(provider, lambda r: httpx.Response(200, json={"id": "asst-1"}))
+    await provider.sync_agent(_definition(timezone="America/Denver"))
+    template = json.loads(seen[0].content)["model"]["messages"][0]["content"]
+
+    instant = datetime(2026, 11, 4, 4, 30, tzinfo=UTC)  # Tue Nov 3, 9:30 PM in Denver
+    rendered = _render_like_vapi(template, instant)
+
+    assert rendered.endswith(
+        clock_instructions(
+            now="Tuesday, November 03, 2026, 09:30 PM",
+            today="2026-11-03",
+            timezone="America/Denver",
+        )
+    )
+
+
+async def test_an_invalid_timezone_is_refused_at_provisioning() -> None:
+    """A bad zone name would make the agent quote the wrong local time on
+    every call; fail loudly before anything is sent."""
+    provider = VapiProvider(_settings())
+    seen = _mock(provider, lambda r: httpx.Response(200, json={"id": "asst-1"}))
+
+    with pytest.raises(AppError, match="not an IANA timezone"):
+        await provider.sync_agent(_definition(timezone="Mountain Time"))
+    assert seen == []

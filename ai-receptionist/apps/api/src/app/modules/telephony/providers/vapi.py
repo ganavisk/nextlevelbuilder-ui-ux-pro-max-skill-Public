@@ -12,6 +12,7 @@ constant time.
 
 import hmac
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 
@@ -23,6 +24,7 @@ from app.modules.telephony.providers.base import (
     NormalizedCallEvent,
     ToolCallRequest,
     VoiceProvider,
+    clock_instructions,
 )
 
 VAPI_BASE_URL = "https://api.vapi.ai"
@@ -64,7 +66,7 @@ class VapiProvider(VoiceProvider):
             "model": {
                 "provider": "anthropic",
                 "model": "claude-sonnet-5",
-                "messages": [{"role": "system", "content": definition.system_prompt}],
+                "messages": [{"role": "system", "content": self._system_prompt(definition)}],
                 "tools": definition.tools,
             },
             "maxDurationSeconds": definition.max_duration_seconds,
@@ -90,6 +92,29 @@ class VapiProvider(VoiceProvider):
                 voice["model"] = definition.voice_model
             payload["voice"] = voice
         return payload
+
+    @staticmethod
+    def _system_prompt(definition: AgentDefinition) -> str:
+        """The tenant prompt plus the call's local time.
+
+        Vapi renders the prompt with LiquidJS when each call starts, and its
+        built-in `now` is UTC, so the date filter converts it to the
+        business's timezone. The prompt is provisioned once, but the time
+        is filled in fresh for every call.
+        """
+        tz = definition.timezone
+        try:
+            ZoneInfo(tz)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            # A bad name would make Vapi print UTC (or garbage) as "local" time
+            # and every relative date the caller gives would be off.
+            raise AppError(f"tenant timezone {tz!r} is not an IANA timezone name") from exc
+        clock = clock_instructions(
+            now=f'{{{{"now" | date: "%A, %B %d, %Y, %I:%M %p", "{tz}"}}}}',
+            today=f'{{{{"now" | date: "%Y-%m-%d", "{tz}"}}}}',
+            timezone=tz,
+        )
+        return f"{definition.system_prompt}\n\n{clock}"
 
     def verify_webhook(self, payload: bytes, headers: dict[str, str]) -> None:
         if not self._webhook_secret:
