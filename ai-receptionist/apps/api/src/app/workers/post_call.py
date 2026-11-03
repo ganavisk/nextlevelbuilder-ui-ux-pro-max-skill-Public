@@ -79,6 +79,7 @@ async def handle_post_call(
             if call.ended_at and call.started_at
             else 0
         )
+        simulated = call.direction == "simulated"  # test lab: never reaches the CRM
         if call.outcome is not None:
             # Classified on an earlier attempt. That attempt may have died
             # after committing the classification but before the CRM job was
@@ -86,7 +87,7 @@ async def handle_post_call(
             # so hand off again rather than returning. A duplicate CRM job is
             # harmless: the crm_syncs ledger turns it into an "already
             # synced" no-op.
-            if redis is not None:
+            if redis is not None and not simulated:
                 await _enqueue_crm(
                     redis, tenant_id, call_id, call.outcome, call.summary or "", duration_seconds
                 )
@@ -117,7 +118,7 @@ async def handle_post_call(
     # Hand off to the CRM worker. Enqueued, not called: a tenant's CRM being
     # down must never delay or fail call classification, which has already
     # been committed above.
-    if redis is not None:
+    if redis is not None and not simulated:
         await _enqueue_crm(
             redis,
             tenant_id,

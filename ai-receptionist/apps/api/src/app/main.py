@@ -105,6 +105,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from app.modules.telephony.dashboard_routes import router as calls_router
     from app.modules.tenants.oauth_routes import router as oauth_router
     from app.modules.tenants.routes import router as tenants_router
+    from app.modules.testlab.routes import router as testlab_router
 
     for dashboard_router in (
         tenants_router,
@@ -114,6 +115,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         callbacks_router,
         analytics_router,
         crm_router,
+        testlab_router,
     ):
         app.include_router(dashboard_router, prefix="/api/v1", tags=["dashboard"])
 

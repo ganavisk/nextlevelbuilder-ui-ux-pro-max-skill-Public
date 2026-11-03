@@ -151,3 +151,39 @@ async def test_a_call_that_does_not_exist_is_a_no_op(classified_call_setup) -> N
         assert await _crm_jobs(redis, missing) == []
     finally:
         await redis.aclose()
+
+
+@requires_services
+async def test_simulated_test_lab_calls_are_classified_but_never_reach_the_crm(
+    classified_call_setup,
+) -> None:
+    tenant_id, call_id = classified_call_setup
+    engine = create_engine(
+        Settings(_env_file=None, app_env="test").database_url.replace(
+            "postgresql+asyncpg://", "postgresql+psycopg2://", 1
+        )
+    )
+    with engine.begin() as conn:
+        conn.execute(text("SELECT set_config('app.tenant_id', :t, true)"), {"t": str(tenant_id)})
+        conn.execute(
+            text("UPDATE calls SET direction = 'simulated' WHERE id = :c"), {"c": str(call_id)}
+        )
+    redis = aioredis.from_url(Settings(_env_file=None, app_env="test").redis_url)
+    llm = FakeLLMProvider(CLASSIFICATION)
+    job = {"tenant_id": str(tenant_id), "call_id": str(call_id)}
+    try:
+        await post_call.handle_post_call(job, llm=llm, redis=redis)
+        await post_call.handle_post_call(job, llm=llm, redis=redis)  # the re-handoff path too
+        assert len(llm.calls) == 1, "the call is still classified once"
+        assert await _crm_jobs(redis, call_id) == []
+        with engine.begin() as conn:
+            scope = text("SELECT set_config('app.tenant_id', :t, true)")
+            conn.execute(scope, {"t": str(tenant_id)})
+            outcome = conn.execute(
+                text("SELECT outcome FROM calls WHERE id = :c"), {"c": str(call_id)}
+            ).scalar_one()
+        assert outcome == "appointment_booked"
+    finally:
+        await _drop_crm_jobs(redis, call_id)
+        await redis.aclose()
+        engine.dispose()

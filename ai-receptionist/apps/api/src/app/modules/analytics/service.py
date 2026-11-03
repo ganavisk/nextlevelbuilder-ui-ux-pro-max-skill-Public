@@ -46,7 +46,12 @@ async def get_summary(tenant_id: uuid.UUID, *, days: int = 30) -> AnalyticsSumma
     window_start = datetime.now(UTC) - timedelta(days=days)
 
     async with tenant_session(tenant_id) as session:
-        base_filter = (Call.tenant_id == tenant_id, Call.started_at >= window_start)
+        # Test-lab calls are rehearsals, not customer demand.
+        base_filter = (
+            Call.tenant_id == tenant_id,
+            Call.started_at >= window_start,
+            Call.direction != "simulated",
+        )
 
         total_calls = (
             await session.execute(select(func.count()).select_from(Call).where(*base_filter))
