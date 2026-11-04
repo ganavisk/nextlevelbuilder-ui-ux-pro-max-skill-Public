@@ -108,6 +108,8 @@ export interface Appointment {
 export interface CallbackRequest {
   id: string;
   caller_e164: string;
+  /** Who to ask for; "" when the caller didn't say. */
+  caller_name: string;
   /** Dial this instead of caller_e164 when set: the caller asked to be called back here. */
   callback_e164: string | null;
   reason: string;

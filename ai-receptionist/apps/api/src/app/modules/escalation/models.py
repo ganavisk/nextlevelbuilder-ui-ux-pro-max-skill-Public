@@ -19,6 +19,8 @@ class CallbackRequest(Base):
         UUID(as_uuid=True), ForeignKey("calls.id"), nullable=True
     )
     caller_e164: Mapped[str] = mapped_column(Text)
+    # Who to ask for when calling back; "" if they didn't say (migration 0011).
+    caller_name: Mapped[str] = mapped_column(Text, default="")
     # A different number the caller asked to be called back on; None means
     # call `caller_e164` (migration 0010).
     callback_e164: Mapped[str | None] = mapped_column(Text, nullable=True)

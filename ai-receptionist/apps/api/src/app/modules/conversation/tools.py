@@ -150,11 +150,17 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "description": (
                 "Take a voicemail/callback request when the caller asks for a "
                 "human, asks something outside what you can help with, or needs "
-                "escalation. Collect the caller's name and reason first."
+                "escalation. Collect the caller's name and reason first; put the "
+                "name in customer_name, not in the reason. If they'd rather not "
+                "give a name, call it anyway."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "customer_name": {
+                        "type": "string",
+                        "description": "Who the team should ask for when they call back",
+                    },
                     "reason": {"type": "string"},
                     "preferred_window": {"type": "string"},
                     "customer_phone": {
@@ -335,6 +341,7 @@ class ToolExecutor:
                         call_id=call_id,
                         caller_e164=caller_e164,
                         callback_e164=callback if different else None,
+                        caller_name=arguments.get("customer_name", ""),
                         reason=arguments.get("reason", ""),
                         preferred_window=arguments.get("preferred_window"),
                     )

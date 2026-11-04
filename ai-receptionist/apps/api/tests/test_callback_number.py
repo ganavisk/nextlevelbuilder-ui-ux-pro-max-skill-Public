@@ -127,3 +127,54 @@ def test_the_prompt_no_longer_asks_every_caller_for_their_number() -> None:
     prompt = assemble_system_prompt(_tenant(), _agent_config())
     assert "collect their name, number, and reason" not in prompt
     assert "a number only if they want a call back somewhere other" in prompt
+
+
+# ── who to ask for ──────────────────────────────────────────────────────
+
+
+def _names(tenant: Tenant) -> list[tuple[str, str]]:
+    engine = _engine()
+    with engine.begin() as conn:
+        conn.execute(text("SELECT set_config('app.tenant_id', :t, true)"), {"t": str(tenant.id)})
+        rows = conn.execute(
+            text("SELECT caller_name, reason FROM callback_requests WHERE tenant_id = :t"),
+            {"t": str(tenant.id)},
+        ).all()
+    engine.dispose()
+    return [(r[0], r[1]) for r in rows]
+
+
+@requires_services
+async def test_the_callers_name_is_saved_apart_from_the_reason(tenant) -> None:
+    await _callback(
+        tenant,
+        caller_id="+15550009999",
+        customer_name="Kenji Watanabe",
+        reason="Grinding noise from the front brakes",
+    )
+    assert _names(tenant) == [("Kenji Watanabe", "Grinding noise from the front brakes")]
+
+
+@requires_services
+async def test_a_caller_who_wont_give_a_name_still_gets_a_callback(tenant) -> None:
+    """A name is useful; a callback is the promise. Never refuse one for it."""
+    assert await _callback(tenant, caller_id="+15550009999") == PROMISE
+    assert _names(tenant)[0][0] == ""
+
+
+@requires_services
+async def test_a_name_is_tidied_and_capped_before_it_is_stored(tenant) -> None:
+    await _callback(tenant, caller_id="+15550009999", customer_name="  Ana   María\nLima ")
+    await _callback(tenant, caller_id="+15550008888", customer_name="x" * 500)
+    stored = sorted(name for name, _ in _names(tenant))
+    assert "Ana María Lima" in stored
+    assert max(len(n) for n in stored) == 120
+
+
+def test_the_tool_asks_for_the_name_in_its_own_field() -> None:
+    from app.modules.conversation.tools import TOOL_SCHEMAS
+
+    callback = next(t for t in TOOL_SCHEMAS if t["function"]["name"] == "request_callback")
+    assert "customer_name" in callback["function"]["parameters"]["properties"]
+    assert "customer_name" not in callback["function"]["parameters"]["required"]
+    assert "not in the reason" in callback["function"]["description"]

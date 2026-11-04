@@ -10,6 +10,7 @@ class CallbackRequestSummary(BaseModel):
 
     id: UUID
     caller_e164: str
+    caller_name: str
     # Dial this instead of caller_e164 when set.
     callback_e164: str | None
     reason: str

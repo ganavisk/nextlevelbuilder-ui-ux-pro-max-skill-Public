@@ -21,6 +21,16 @@ from app.modules.escalation.models import CallbackRequest
 VALID_STATUSES = ("open", "contacted", "resolved")
 
 
+MAX_NAME_LENGTH = 120
+
+
+def clean_name(raw: object) -> str:
+    """A name as the model wrote it, made safe to store and show: whitespace
+    collapsed, length capped. Not otherwise judged: names don't follow rules."""
+    name = " ".join(str(raw or "").split())
+    return name[:MAX_NAME_LENGTH]
+
+
 async def create_callback_request(
     *,
     tenant_id: uuid.UUID,
@@ -30,15 +40,18 @@ async def create_callback_request(
     preferred_window: str | None = None,
     voicemail_transcript: str | None = None,
     callback_e164: str | None = None,
+    caller_name: str = "",
 ) -> uuid.UUID:
     """`callback_e164` is a number the caller asked to be called back on
-    instead of the one they called from (already normalized)."""
+    instead of the one they called from (already normalized). `caller_name`
+    is who to ask for, as the agent heard it."""
     async with tenant_session(tenant_id) as session:
         request = CallbackRequest(
             tenant_id=tenant_id,
             call_id=call_id,
             caller_e164=caller_e164,
             callback_e164=callback_e164,
+            caller_name=clean_name(caller_name),
             reason=reason,
             preferred_window=preferred_window,
             voicemail_transcript=voicemail_transcript,

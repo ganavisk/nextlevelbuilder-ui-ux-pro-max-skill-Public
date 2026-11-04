@@ -425,6 +425,7 @@ function ToolBench({
     customer_name: "Priya Raman",
     question: "Do you offer loaner cars?",
     reason: "Wants to talk to a technician about a noise",
+    callback_name: "Kenji Watanabe",
   });
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -485,6 +486,15 @@ function ToolBench({
     ),
     request_callback: (
       <>
+        <Field label="Caller name" htmlFor="bench-callback-name">
+          <input
+            id="bench-callback-name"
+            value={values.callback_name ?? ""}
+            onChange={set("callback_name")}
+            autoComplete="off"
+            className={fieldInput}
+          />
+        </Field>
         <Field label="Reason" htmlFor="bench-reason">
           <input id="bench-reason" value={values.reason} onChange={set("reason")} className={fieldInput} />
         </Field>
@@ -524,8 +534,10 @@ function ToolBench({
         return pick("question");
       default: {
         // Same tool argument as booking; a separate form key so each tab keeps its own value.
-        const args = pick("reason", "preferred_window");
-        return values.callback_phone ? { ...args, customer_phone: values.callback_phone } : args;
+        const args: Record<string, string> = pick("reason", "preferred_window");
+        if (values.callback_name) args.customer_name = values.callback_name;
+        if (values.callback_phone) args.customer_phone = values.callback_phone;
+        return args;
       }
     }
   };
