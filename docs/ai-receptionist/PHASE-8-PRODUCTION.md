@@ -24,7 +24,7 @@
 
 Phase 8 also delivered product work that came out of using the system: service bays, the auto repair tenant, the Test Lab, voice-agent sync and a voice review (§6).
 
-**Backend test count: 492, up from 259 at Phase 7 close.** `ruff check`, `ruff format` and `mypy --strict` are clean, and the dashboard `next build` is clean.
+**Backend test count: 499, up from 259 at Phase 7 close.** `ruff check`, `ruff format` and `mypy --strict` are clean, and the dashboard `next build` is clean.
 
 ## 2. Tenant #2: onboarding by configuration
 
@@ -153,12 +153,27 @@ Each process opens up to `DB_POOL_SIZE + DB_MAX_OVERFLOW` connections, 5 + 10 by
 
 and leave headroom for migrations and operators. The formula is in the Railway README and the runbook. If a managed plan's limit is tight, put PgBouncer in **transaction** mode in front of Postgres. That works because the tenant is set transaction-locally (§3.1), which is exactly what transaction pooling needs.
 
-### 3.7 Backup and recovery: TBD
+### 3.7 Backup and recovery: PITR on, restore drilled
 
-The provider's managed backups are the plan. The numbers aren't decided yet:
-- **RPO:** TBD. Decide between daily snapshots and PITR (continuous WAL archiving). PITR is the right default for appointment data.
-- **RTO:** TBD.
-- **Restore drill:** not yet done. Until a restore has been tested, the backups are unproven.
+The procedure is in `docs/runbooks/backup-and-restore.md`, with the drill log.
+
+**Fix.** Point-in-time recovery: WAL archiving with `archive_timeout = 60s`, written atomically and gzipped, plus a base backup taken with `pg_basebackup`.
+- `infra/postgres/pitr-restore.sh` restores to a timestamp or to `latest`, always into a new data directory, with archiving off on the copy.
+- `scripts/verify_restore.py` decides whether a restore may serve. It checks the schema, row-level security, the app role and the booking constraint. Given a manifest, it also compares full-row hashes for every table, business by business.
+
+**Evidence** (drilled on 2026-11-04 against local Postgres 16, 117 MB):
+
+| Scenario | Result |
+|---|---|
+| Operator deletes a business | Restored to just before the DELETE in **2.7 s**. Verified 25/25 identical to the manifest; the API served the copy. |
+| Server lost, no warning | **43.2 s** of writes lost, within the 60 s bound. Restore 2.7 s. |
+| Compressed archive | Restored from `.gz` segments. An idle 16 MB segment is 24.5 KB. |
+
+**Tradeoffs and what's still open.**
+- **RPO ≤ 60 s costs a segment a minute even when idle.** That's about 23 GB a day uncompressed, and why the archive is gzipped. A tighter RPO needs streaming replication, not a smaller `archive_timeout`.
+- **The drill's archive is on the database's own disk,** and `cp`/`gzip` don't fsync. That proves the procedure, not offsite durability. Production needs pgBackRest or WAL-G to storage in another region, or the managed provider's PITR.
+- **Whether Railway's Postgres offers PITR is unverified.** If it only offers daily snapshots, the RPO is up to 24 hours. That's not acceptable for appointment data.
+- **The end-to-end RTO target (≤ 30 min) is proposed, not confirmed.** The cutover step hasn't been drilled.
 
 Redis holds only queues and live call state. Losing it loses queued jobs (summaries, texts, CRM syncs), not records.
 
@@ -226,7 +241,7 @@ These came out of exercising the system rather than the original plan. Each was 
 
 | Check | Result |
 |---|---|
-| `pytest`, live Postgres 16 + Redis, as the restricted role | **492 passed** |
+| `pytest`, live Postgres 16 + Redis, as the restricted role | **499 passed** |
 | `ruff check`, `ruff format --check`, `mypy --strict` | clean |
 | Dashboard `next build` (strict type-check) | clean |
 | Migrations 0008–0012: up, down, up | ✅ |
@@ -255,7 +270,10 @@ These came out of exercising the system rather than the original plan. Each was 
 
 ## 9. Known gaps and risks
 
-- **Backups:** RPO and RTO are TBD, and no restore drill has been done (§3.7). This is the first thing to settle before real data.
+- **Backups (§3.7):** PITR is on and drilled locally (RPO 43 s measured; restore 2.7 s). Still open before real data:
+  - offsite storage (pgBackRest or WAL-G), or confirming the provider's PITR;
+  - a drill of the cutover;
+  - confirming the proposed 30-minute RTO.
 - **Railway IaC:** the deprecated Config as Code needs porting to `.railway/railway.ts` before 2026-12-01. Its syntax is unverified (§5).
 - **No staging deploy yet.** The load-test numbers come from one shared machine. Rerun them on staging before launch.
 - **`CREDENTIALS_ENCRYPTION_KEY` has no rotation tool.** Rotating it forces every tenant to reconnect Google and HubSpot.
@@ -272,6 +290,6 @@ These came out of exercising the system rather than the original plan. Each was 
 
 ## 10. Next
 
-1. Decide RPO and RTO, enable PITR, and run one restore drill.
+1. Confirm production PITR: the provider's feature, or pgBackRest/WAL-G to offsite storage. Confirm the RTO target. Then repeat the drill on staging, including the cutover.
 2. Deploy to staging, porting the Railway settings to IaC. Then rerun the load test and `make lab-scenarios` there.
 3. Onboard the first real business from its YAML, using `make seed`, `make provision` and `make check-keys`.

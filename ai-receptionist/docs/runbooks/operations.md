@@ -2,7 +2,8 @@
 
 What to check, in order, when something goes wrong in production, and how to
 do the routine jobs safely. Setup is in `infra/railway/README.md`; connecting a
-phone number is in `connecting-the-voice-system.md`.
+phone number is in `connecting-the-voice-system.md`; backups and restoring the
+database are in `backup-and-restore.md`.
 
 Commands below that run scripts do so from `apps/api` on a machine with the
 production `DATABASE_URL` (the `receptionist_app` role) and `REDIS_URL`

@@ -166,8 +166,13 @@ sessions, and lower `DB_POOL_SIZE`/`DB_MAX_OVERFLOW` if you scale out.
   find it with `SELECT indexrelid::regclass FROM pg_index WHERE NOT
   indisvalid;`, drop it, and redeploy. Background and measurements are in
   `docs/ai-receptionist/PHASE-8-PRODUCTION.md`, section 3.
-- **Backups:** use the provider's backups for Postgres. Redis holds only
-  queues and call state; losing it loses queued jobs, not records.
+- **Backups:** Postgres needs **point-in-time recovery**, not just daily
+  snapshots, which could lose a day of appointments. Use the provider's PITR
+  if it has one (check Railway's current docs; this is unverified). Otherwise
+  run pgBackRest or WAL-G to offsite storage. Procedure, restore script, the
+  verification tool and the drill log are in
+  `docs/runbooks/backup-and-restore.md`. Redis holds only queues and call
+  state; losing it loses queued jobs, not records.
 
 Operating the running system (incidents, queues, rotating secrets) is in
 `docs/runbooks/operations.md`.
