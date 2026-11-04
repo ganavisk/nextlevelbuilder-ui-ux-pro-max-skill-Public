@@ -74,3 +74,17 @@ export async function saveCallbackPromises(_prev: FormState, formData: FormData)
   revalidatePath("/settings");
   return { error: null, saved: true };
 }
+
+export async function saveCallbackTriggers(_prev: FormState, formData: FormData): Promise<FormState> {
+  const triggers = String(formData.get("triggers") ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  try {
+    await apiFetch("/tenants/me/callback-triggers", { method: "PUT", body: JSON.stringify({ triggers }) });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath("/settings");
+  return { error: null, saved: true };
+}

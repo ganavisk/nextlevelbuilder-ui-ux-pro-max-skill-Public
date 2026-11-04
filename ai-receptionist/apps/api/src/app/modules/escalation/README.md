@@ -36,6 +36,18 @@ hours as spoken ("tomorrow at 7:30 am", "Monday at 7:30 am"), so a caller at
 9 pm isn't told "within 30 minutes". The prompt tells the agent to relay what
 the tool returns rather than quoting a fixed promise of its own.
 
+**When to escalate (`escalation_policy.triggers`):** the business's own
+situations for handing a caller to the team ("vehicle is unsafe to drive",
+"any request for legal advice"). `tenants.service` lists them in the agent's
+prompt, after the universal rule (the caller asks for a person, or the agent
+can't help), as cases where it uses `request_callback` instead of handling
+the request itself. Edited in Settings → When to take a call back
+(`PUT /tenants/me/callback-triggers`). `validate_triggers` tidies spacing,
+drops blanks and repeats, and allows up to 10 of at most 160 characters each.
+Because they change the prompt, a save goes through voice sync and Settings
+shows when it's live. `mode` is still informational: voicemail-plus-callback
+is the only v1 mode.
+
 **Editing (Settings → Callback promise):** `PUT /tenants/me/callback-promises`
 saves both texts as a new agent-config version, merged over the current
 policy so keys the form doesn't show (`mode`, `triggers`) survive; an empty

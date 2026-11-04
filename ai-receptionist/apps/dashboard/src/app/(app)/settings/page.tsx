@@ -3,7 +3,7 @@ import { apiFetch } from "@/lib/api";
 import { readSession } from "@/lib/session";
 import type { AgentConfig, CallbackPromisesPreview, Integration, Tenant, VoiceSync } from "@/lib/types";
 import { Badge, btn, Notice, PageHeader, Section } from "@/components/ui";
-import { AgentForm, CallbackPromisesForm, TenantForm } from "./forms";
+import { AgentForm, CallbackPromisesForm, TenantForm, TriggersForm } from "./forms";
 import { VoiceSyncRow } from "./voice-sync";
 
 export const metadata: Metadata = { title: "Settings" };
@@ -90,6 +90,18 @@ export default async function SettingsPage({
         }
       >
         <AgentForm agent={agent} sync={voiceSync} readOnly={readOnly} />
+      </Section>
+
+      <Section title="When to take a call back">
+        <TriggersForm
+          triggers={
+            Array.isArray(agent.escalation_policy.triggers)
+              ? (agent.escalation_policy.triggers as unknown[]).map(String)
+              : []
+          }
+          sync={voiceSync}
+          readOnly={readOnly}
+        />
       </Section>
 
       <Section title="Callback promise">

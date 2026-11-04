@@ -63,6 +63,25 @@ def _format_booking_fields(fields: list[dict[str, str]], questions: list[dict[st
     return "\n\n" + " ".join(parts)
 
 
+def _format_escalation(policy: dict[str, Any] | None) -> str:
+    """When to hand the caller to the team via request_callback: always when
+    they ask for a person or the agent can't help, plus the business's own
+    `escalation_policy.triggers` (an auto shop's "vehicle is unsafe to drive",
+    a law firm's "any request for legal advice"). Edited in Settings → When to
+    take a call back; a change reaches the phone agent through voice sync."""
+    triggers = [str(t).strip() for t in (policy or {}).get("triggers") or [] if str(t).strip()]
+    base = "If the caller asks for a human or you cannot help, use the request_callback tool."
+    if not triggers:
+        return base + " "
+    return (
+        base
+        + " Also use it, rather than handling the request yourself, in any of these "
+        + "situations for this business:\n"
+        + "\n".join(f"- {t}" for t in triggers)
+        + "\n"
+    )
+
+
 def assemble_system_prompt(tenant: Tenant, config: AgentConfig) -> str:
     """Compose the runtime system prompt from tenant config. Guardrails
     (forbidden topics, escalation promise) are part of the prompt contract,
@@ -80,8 +99,8 @@ def assemble_system_prompt(tenant: Tenant, config: AgentConfig) -> str:
         f"{config.system_prompt}{forbidden_block}{qualification_block}{booking_block}\n\n"
         f"For any factual question about the business (hours, services, prices, "
         f"policies, location) use the answer_faq tool rather than answering from memory.\n\n"
-        f"If the caller asks for a human or you cannot help, use the request_callback "
-        f"tool: collect their name and reason first (and a number only if they want a "
+        f"{_format_escalation(config.escalation_policy)}Collect their name and reason "
+        f"first (and a number only if they want a "
         f"call back somewhere other than the phone they're calling from), then tell "
         f"them what the tool says about when they'll hear back. Don't promise a time "
         f"of your own: the tool knows whether the business is open."

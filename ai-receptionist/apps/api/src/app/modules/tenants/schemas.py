@@ -97,6 +97,13 @@ class CallbackPromisesUpdate(BaseModel):
     after_hours_promise: str = ""
 
 
+class CallbackTriggersUpdate(BaseModel):
+    """The situations in which the receptionist takes a callback instead of
+    handling the request itself. Merged into the current escalation policy."""
+
+    triggers: list[str]
+
+
 class CallbackPromisesPreview(BaseModel):
     """For the Settings preview: what {next_open} says for a caller who rang
     after today's closing, from the real business hours (None without hours)."""

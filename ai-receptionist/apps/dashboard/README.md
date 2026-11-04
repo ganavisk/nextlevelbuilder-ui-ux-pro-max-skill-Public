@@ -76,6 +76,14 @@ in flight the page re-renders every 3 s (for up to 2 minutes, paused while the
 tab is hidden), so the save notice changes from "Sending it to the phone
 agent..." to "Saved and live" without a reload.
 
+## When to take a call back
+
+Settings → **When to take a call back** lists, one per line, the situations in
+which the receptionist takes a message for the team instead of handling the
+request (a vehicle that isn't safe to drive, a dispute about an invoice). They
+are part of the agent's instructions, so a save goes to the phone agent like
+Instructions do, and the notice follows it from "Sending..." to "Saved and live".
+
 ## Callback promise
 
 Settings → **Callback promise** edits what callers hear after asking for a

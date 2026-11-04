@@ -15,7 +15,11 @@ from app.core.auth import AuthContext, get_current_user, require_role
 from app.core.config import Settings
 from app.core.errors import ValidationFailedError
 from app.core.util import deep_merge
-from app.modules.escalation.service import example_next_open, validate_promises
+from app.modules.escalation.service import (
+    example_next_open,
+    validate_promises,
+    validate_triggers,
+)
 from app.modules.tenants.login import login as login_user
 from app.modules.tenants.repository import (
     create_agent_config_version,
@@ -28,6 +32,7 @@ from app.modules.tenants.schemas import (
     AgentConfigUpdateRequest,
     CallbackPromisesPreview,
     CallbackPromisesUpdate,
+    CallbackTriggersUpdate,
     LoginRequest,
     LoginResponse,
     TenantSummary,
@@ -127,6 +132,8 @@ async def update_my_agent_config(
 ) -> AgentConfigSummary:
     fields = body.model_dump(exclude_unset=True, exclude_none=True)
     policy = fields.get("escalation_policy")
+    if policy is not None and "triggers" in policy:
+        policy["triggers"] = validate_triggers(policy["triggers"])
     if policy is not None and ("callback_promise" in policy or "after_hours_promise" in policy):
         # Same checks as the Settings editor (PUT /tenants/me/callback-promises),
         # so the raw API can't save a promise callers would hear garbled.
@@ -154,6 +161,24 @@ async def update_my_callback_promises(
     if not texts["after_hours_promise"]:
         policy.pop("after_hours_promise")
     config = await create_agent_config_version(auth.tenant_id, escalation_policy=policy)
+    return AgentConfigSummary.model_validate(config)
+
+
+@router.put("/tenants/me/callback-triggers", response_model=AgentConfigSummary)
+async def update_my_callback_triggers(
+    body: CallbackTriggersUpdate,
+    request: Request,
+    auth: AuthContext = Depends(require_role("admin")),
+) -> AgentConfigSummary:
+    """Edit when the receptionist takes a callback. Unlike the promises, the
+    triggers are part of the agent's prompt, so a change is pushed to the
+    phone agent (voice sync), and Settings shows when it is live."""
+    triggers = validate_triggers(body.triggers)
+    current = await get_active_agent_config(auth.tenant_id)
+    before = await agent_snapshot(auth.tenant_id)
+    policy = {**(current.escalation_policy or {}), "triggers": triggers}
+    config = await create_agent_config_version(auth.tenant_id, escalation_policy=policy)
+    await resync_if_changed(auth.tenant_id, before, redis=request.app.state.redis)
     return AgentConfigSummary.model_validate(config)
 
 

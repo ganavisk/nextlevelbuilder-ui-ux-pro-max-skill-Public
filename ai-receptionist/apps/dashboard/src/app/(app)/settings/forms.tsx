@@ -2,7 +2,13 @@
 
 import { useActionState, useRef, useState } from "react";
 import { btn, Notice } from "@/components/ui";
-import { saveAgent, saveCallbackPromises, saveTenant, type FormState } from "./actions";
+import {
+  saveAgent,
+  saveCallbackPromises,
+  saveCallbackTriggers,
+  saveTenant,
+  type FormState,
+} from "./actions";
 import type { AgentConfig, VoiceSync } from "@/lib/types";
 
 const initial: FormState = { error: null, saved: false };
@@ -234,6 +240,50 @@ export function CallbackPromisesForm({
       {!readOnly && (
         <button type="submit" disabled={pending} className={`${btn.base} ${btn.primary} self-start`}>
           {pending ? "Saving..." : "Save callback promise"}
+        </button>
+      )}
+    </form>
+  );
+}
+
+/** The situations in which the receptionist hands the caller to the team
+ * (request_callback) instead of handling it. They are part of the agent's
+ * prompt, so the save notice follows the phone-agent update like Instructions. */
+export function TriggersForm({
+  triggers,
+  sync,
+  readOnly,
+}: {
+  triggers: string[];
+  sync: VoiceSync;
+  readOnly: boolean;
+}) {
+  const [state, action, pending] = useActionState(saveCallbackTriggers, initial);
+  return (
+    <form action={action} className="flex max-w-2xl flex-col gap-5">
+      <Status state={state} sync={sync} />
+      <div className="flex flex-col gap-2">
+        <label htmlFor="triggers" className="text-[13px] font-medium text-label-2">
+          Take a message for the team when
+        </label>
+        <textarea
+          id="triggers"
+          name="triggers"
+          rows={5}
+          defaultValue={triggers.join("\n")}
+          disabled={readOnly}
+          placeholder={"caller asks for a person\nquestion about an existing invoice"}
+          className={`${input} resize-y`}
+        />
+        <p className="text-[13px] text-label-2">
+          One situation per line, up to 10. The receptionist always offers a call back when someone asks
+          for a person or it can&apos;t help; add the situations specific to your business, such as a
+          vehicle that isn&apos;t safe to drive.
+        </p>
+      </div>
+      {!readOnly && (
+        <button type="submit" disabled={pending} className={`${btn.base} ${btn.primary} self-start`}>
+          {pending ? "Saving..." : "Save situations"}
         </button>
       )}
     </form>

@@ -72,6 +72,37 @@ def example_next_open(
     return _spoken(opens, timezone, now) if opens is not None else None
 
 
+MAX_TRIGGERS = 10
+MAX_TRIGGER_LENGTH = 160
+
+
+def validate_triggers(raw: object) -> list[str]:
+    """The situations a business wants handed to the team, as typed in
+    Settings: whitespace tidied, blanks and repeats dropped (keeping the
+    first spelling), each short enough to be one clear instruction."""
+    if not isinstance(raw, list):
+        raise ValidationFailedError("Triggers must be a list of situations.")
+    triggers: list[str] = []
+    seen: set[str] = set()
+    for item in raw:
+        text = " ".join(str(item or "").split())
+        if not text or text.lower() in seen:
+            continue
+        if len(text) > MAX_TRIGGER_LENGTH:
+            raise ValidationFailedError(
+                f"Keep each situation under {MAX_TRIGGER_LENGTH} characters: "
+                f'"{text[:40]}..." is too long.'
+            )
+        seen.add(text.lower())
+        triggers.append(text)
+    if len(triggers) > MAX_TRIGGERS:
+        raise ValidationFailedError(
+            f"Up to {MAX_TRIGGERS} situations. A long list makes the receptionist "
+            "hand over calls it could handle."
+        )
+    return triggers
+
+
 NEXT_OPEN = "{next_open}"
 MAX_PROMISE_LENGTH = 300
 _PLACEHOLDER = re.compile(r"\{[^{}]*\}")
