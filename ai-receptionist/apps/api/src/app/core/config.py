@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     # Data stores
     database_url: str = "postgresql+asyncpg://receptionist:receptionist@localhost:5432/receptionist"
     redis_url: str = "redis://localhost:6379/0"
+    # Connections per process: up to pool_size + max_overflow under load. Size
+    # these so (api processes x WEB_CONCURRENCY + worker processes) x their sum
+    # stays under the database's connection limit (infra/railway/README.md).
+    db_pool_size: int = Field(default=5, ge=1)
+    db_max_overflow: int = Field(default=10, ge=0)
     credentials_encryption_key: str = ""
 
     # Voice layer

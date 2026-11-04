@@ -52,6 +52,17 @@ class TelephonyService:
     # ── lifecycle handlers ─────────────────────────────────────────────────
 
     async def _on_call_started(self, event: NormalizedCallEvent) -> dict[str, Any]:
+        await self._register_call(event)
+        return {"status": "accepted"}
+
+    async def _register_call(self, event: NormalizedCallEvent) -> tuple[uuid.UUID, uuid.UUID]:
+        """Create the call row (idempotently) and its Redis session state.
+
+        Normally run by the call-started event. Also run when a later event
+        arrives for a call we have no record of: vendors don't guarantee
+        webhook order or delivery, and a lost or late start must not turn
+        every tool call on that call into a 500 the caller hears as silence.
+        """
         tenant, number = await resolve_tenant_by_number(event.to_number)
         async with tenant_session(tenant.id) as session:
             # Idempotent: vendors retry webhooks; (tenant_id, vendor_call_id) is unique.
@@ -78,7 +89,7 @@ class TelephonyService:
             json.dumps({"tenant_id": str(tenant.id), "call_id": str(call_id)}),
             ex=self._settings.max_call_duration_seconds + 600,
         )
-        return {"status": "accepted"}
+        return tenant.id, call_id
 
     async def _on_call_ended(self, event: NormalizedCallEvent) -> dict[str, Any]:
         tenant_id, call_id = await self._resolve_call(event)
@@ -151,7 +162,8 @@ class TelephonyService:
 
     async def _resolve_call(self, event: NormalizedCallEvent) -> tuple[uuid.UUID, uuid.UUID]:
         """Prefer the Redis call-session state; fall back to DB resolution so
-        a Redis flush mid-call can never lose the end-of-call report."""
+        a Redis flush mid-call can never lose the end-of-call report; and if
+        the call isn't in the DB either, register it from this event."""
         raw = await self._redis.get(f"{CALL_STATE_PREFIX}{event.vendor_call_id}")
         if raw:
             state = json.loads(raw)
@@ -165,8 +177,16 @@ class TelephonyService:
                         Call.tenant_id == tenant.id, Call.vendor_call_id == event.vendor_call_id
                     )
                 )
-            ).scalar_one()
-        return tenant.id, call_id
+            ).scalar_one_or_none()
+        if call_id is not None:
+            return tenant.id, call_id
+        # The start event never arrived (or hasn't yet): register the call now.
+        logger.warning(
+            "call_registered_late",
+            vendor_call_id=event.vendor_call_id,
+            event_type=event.event_type,
+        )
+        return await self._register_call(event)
 
     @staticmethod
     def _normalize_turns(artifact: dict[str, Any]) -> list[dict[str, Any]]:

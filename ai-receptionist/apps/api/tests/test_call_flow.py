@@ -133,3 +133,69 @@ def test_full_call_lifecycle() -> None:
             conn.execute(text("DELETE FROM tenants WHERE id = :id"), {"id": str(tenant_id)})
         engine.dispose()
         redis.close()
+
+
+@requires_services
+def test_a_call_whose_start_event_never_arrived_still_works() -> None:
+    """Vendors don't guarantee webhook order or delivery. Found by the load
+    test: a lost call-started event made every later tool call on that call a
+    500, which the caller hears as silence. The first event we do get for an
+    unknown call now registers it."""
+    settings = Settings(_env_file=None, app_env="test", vapi_webhook_secret=SECRET)
+    sync_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql+psycopg2://", 1)
+    engine = create_engine(sync_url)
+    redis = sync_redis.Redis.from_url(settings.redis_url)
+    tenant_id = uuid.uuid4()
+    number = f"+1999{uuid.uuid4().int % 10**7:07d}"
+    vendor_call_id = f"itest-late-{uuid.uuid4().hex[:12]}"
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO tenants (id, slug, name, vertical) "
+                "VALUES (:id, :slug, 'Late', 'dental')"
+            ),
+            {"id": str(tenant_id), "slug": f"late-{tenant_id.hex[:8]}"},
+        )
+        conn.execute(text("SELECT set_config('app.tenant_id', :t, true)"), {"t": str(tenant_id)})
+        conn.execute(
+            text("INSERT INTO phone_numbers (tenant_id, e164) VALUES (:t, :e)"),
+            {"t": str(tenant_id), "e": number},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO agent_configs (tenant_id, version, is_active, system_prompt, "
+                "first_message) VALUES (:t, 1, true, 'You are a receptionist.', 'Hello!')"
+            ),
+            {"t": str(tenant_id)},
+        )
+    try:
+        with TestClient(create_app(settings)) as client:
+
+            def post(fixture_name: str):
+                body = json.dumps(_fixture(fixture_name, number, vendor_call_id))
+                return client.post(
+                    "/webhooks/voice/vapi", content=body, headers={"x-vapi-secret": SECRET}
+                )
+
+            # No call-started event: straight to a tool call, then the end.
+            tool = post("vapi_tool_calls.json")
+            assert tool.status_code == 200 and "results" in tool.json()
+            assert post("vapi_end_of_call_report.json").json() == {"status": "accepted"}
+
+        with engine.begin() as conn:
+            conn.execute(
+                text("SELECT set_config('app.tenant_id', :t, true)"), {"t": str(tenant_id)}
+            )
+            calls = conn.execute(
+                text("SELECT ended_at FROM calls WHERE vendor_call_id = :v"), {"v": vendor_call_id}
+            ).all()
+        assert len(calls) == 1 and calls[0].ended_at is not None  # one call, completed
+    finally:
+        for item in redis.lrange(POST_CALL_QUEUE, 0, -1):
+            if str(tenant_id) in item.decode():
+                redis.lrem(POST_CALL_QUEUE, 0, item)
+        redis.delete(f"call:{vendor_call_id}")
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM tenants WHERE id = :id"), {"id": str(tenant_id)})
+        engine.dispose()
+        redis.close()

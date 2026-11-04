@@ -44,7 +44,13 @@ def table_of(model: Any) -> Table:
 def get_engine() -> AsyncEngine:
     global _engine, _session_factory
     if _engine is None:
-        _engine = create_async_engine(get_settings().database_url, pool_pre_ping=True)
+        settings = get_settings()
+        _engine = create_async_engine(
+            settings.database_url,
+            pool_pre_ping=True,
+            pool_size=settings.db_pool_size,
+            max_overflow=settings.db_max_overflow,
+        )
         _session_factory = async_sessionmaker(_engine, expire_on_commit=False)
     return _engine
 

@@ -21,6 +21,10 @@ Redis call-session keys (`call:<vendor_call_id>`, TTL-bounded), jobs on
 - The webhook path does no LLM work and no integration I/O (hot-path latency
   budget from Phase 1 §3.3).
 - All handlers are idempotent — vendors retry webhooks.
+- Vendors don't guarantee webhook order or delivery either: the first event
+  for a call we have no record of (a lost or late call-started) registers the
+  call (`_register_call`, logged as `call_registered_late`) instead of
+  failing every tool call on it. Found by the load test (`docs/load-test.md`).
 - The agent is told the business's current local time on every call. The
   provisioned prompt is static, so `providers/vapi.py` appends
   `clock_instructions` with Vapi's per-call LiquidJS template
