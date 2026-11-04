@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import models as _models  # noqa: F401 — registers every ORM model on Base.metadata
 from app.core.config import Settings, get_settings
-from app.core.db import check_database, ensure_rls_enforced
+from app.core.db import check_database, dispose_engine, ensure_rls_enforced
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.observability import init_sentry
@@ -39,6 +39,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("startup", env=settings.app_env)
     yield
     await app.state.redis.aclose()
+    await dispose_engine()
     logger.info("shutdown")
 
 

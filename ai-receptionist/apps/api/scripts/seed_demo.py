@@ -14,6 +14,7 @@ qualification/callback testing without live embedding credentials.
 
 import argparse
 import asyncio
+import uuid
 from pathlib import Path
 
 import yaml
@@ -21,7 +22,7 @@ from sqlalchemy import select
 
 import app.models  # noqa: F401 — registers every ORM model on Base.metadata
 from app.core.config import get_settings
-from app.core.db import admin_session, tenant_session
+from app.core.db import tenant_session
 from app.core.logging import configure_logging, get_logger
 from app.core.security import hash_password
 from app.modules.conversation.knowledge import ingest_document
@@ -32,18 +33,32 @@ from app.modules.tenants.models import AgentConfig, PhoneNumber, Tenant, User
 logger = get_logger(__name__)
 
 
-async def seed(config_path: Path, number: str) -> None:
+async def seed(config_path: Path, number: str) -> uuid.UUID | None:
+    """Onboard the tenant described by `config_path`. Returns its id, or None
+    if a tenant with that slug already exists.
+
+    Everything but knowledge embedding happens in ONE transaction: the tenant
+    row, agent config, phone number, owner login and knowledge docs commit
+    together or not at all. (They used to be two transactions, and a failure
+    in the second left a tenant with no agent config or number that a re-run
+    then skipped as "exists".) The id is generated here so the transaction can
+    run tenant-scoped from the start; `tenants` itself has no RLS.
+    """
     doc = yaml.safe_load(config_path.read_text())
     tenant_cfg, agent_cfg = doc["tenant"], doc["agent"]
+    tenant_id = uuid.uuid4()
+    knowledge_doc_ids = []
+    dashboard_cfg = doc.get("dashboard", {})
 
-    async with admin_session() as session:
+    async with tenant_session(tenant_id) as session:
         existing = (
             await session.execute(select(Tenant).where(Tenant.slug == tenant_cfg["slug"]))
         ).scalar_one_or_none()
         if existing:
             logger.info("tenant_exists", slug=tenant_cfg["slug"], tenant_id=str(existing.id))
-            return
+            return None
         tenant = Tenant(
+            id=tenant_id,
             slug=tenant_cfg["slug"],
             name=tenant_cfg["name"],
             vertical=tenant_cfg["vertical"],
@@ -62,10 +77,6 @@ async def seed(config_path: Path, number: str) -> None:
         )
         session.add(tenant)
         await session.flush()
-        tenant_id = tenant.id
-
-    knowledge_doc_ids = []
-    async with tenant_session(tenant_id) as session:
         session.add(
             AgentConfig(
                 tenant_id=tenant_id,
@@ -83,7 +94,6 @@ async def seed(config_path: Path, number: str) -> None:
         )
         session.add(PhoneNumber(tenant_id=tenant_id, e164=number))
 
-        dashboard_cfg = doc.get("dashboard", {})
         if dashboard_cfg.get("owner_email"):
             session.add(
                 User(
@@ -113,19 +123,20 @@ async def seed(config_path: Path, number: str) -> None:
         )
 
     if not knowledge_doc_ids:
-        return
+        return tenant_id
     if not get_settings().voyage_api_key:
         logger.warning(
             "knowledge_ingestion_skipped",
             reason="VOYAGE_API_KEY not configured",
             docs=len(knowledge_doc_ids),
         )
-        return
+        return tenant_id
 
     embeddings = get_embedding_provider(get_settings())
     for knowledge_doc_id in knowledge_doc_ids:
         chunk_count = await ingest_document(tenant_id, knowledge_doc_id, embeddings)
         logger.info("knowledge_doc_ingested", doc_id=str(knowledge_doc_id), chunks=chunk_count)
+    return tenant_id
 
 
 if __name__ == "__main__":

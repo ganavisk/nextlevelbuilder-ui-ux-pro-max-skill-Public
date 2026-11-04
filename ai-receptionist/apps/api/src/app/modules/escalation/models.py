@@ -2,8 +2,9 @@
 queue (Phase 1's v1 escalation policy — no live transfer)."""
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import ForeignKey, Text
+from sqlalchemy import DateTime, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -28,3 +29,4 @@ class CallbackRequest(Base):
     voicemail_transcript: Mapped[str | None] = mapped_column(Text, nullable=True)
     preferred_window: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(Text, default="open")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default="now()")

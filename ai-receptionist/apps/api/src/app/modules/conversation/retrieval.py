@@ -1,12 +1,19 @@
 """RAG retrieval: embed the caller's question, search the tenant's knowledge
-chunks by cosine distance (pgvector HNSW index from migration 0001), and
-return only chunks confident enough to ground an answer.
+chunks by cosine distance, and return only chunks confident enough to ground
+an answer.
+
+The search filters to the tenant *first* and computes exact distances over
+its chunks. It deliberately doesn't use an approximate (HNSW) index: a global
+one returns its nearest candidates across every tenant and row-level security
+filters afterwards, so a tenant whose chunks aren't among them gets nothing
+back (reproduced; see migration 0012). Each business's knowledge base is
+small, so exact search costs milliseconds and never misses.
 """
 
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import literal_column, select
 
 from app.core.db import tenant_session
 from app.modules.conversation.models import KnowledgeChunk
@@ -35,11 +42,19 @@ async def retrieve_relevant_chunks(
     [query_vector] = await embeddings.embed([query], for_query=True)
 
     async with tenant_session(tenant_id) as session:
-        distance = KnowledgeChunk.embedding.cosine_distance(query_vector)
+        # MATERIALIZED stops Postgres folding the tenant filter into an
+        # ORDER BY ... LIMIT plan over an approximate index.
+        mine = (
+            select(KnowledgeChunk.content, KnowledgeChunk.embedding)
+            .where(KnowledgeChunk.tenant_id == tenant_id)
+            .cte("mine")
+            .prefix_with("MATERIALIZED")
+        )
+        distance = mine.c.embedding.cosine_distance(query_vector)
         rows = (
             await session.execute(
-                select(KnowledgeChunk.content, distance.label("distance"))
-                .order_by(distance)
+                select(mine.c.content, distance.label("distance"))
+                .order_by(literal_column("distance"))
                 .limit(top_k)
             )
         ).all()

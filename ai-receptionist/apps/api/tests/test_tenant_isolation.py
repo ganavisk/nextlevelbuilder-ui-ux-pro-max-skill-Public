@@ -75,6 +75,42 @@ def test_rls_is_enabled_and_forced_on_tenant_tables() -> None:
 
 
 @requires_services
+def test_every_tenant_table_is_protected_found_from_the_catalog() -> None:
+    """The list above was written by hand when there were five tenant tables;
+    there are fifteen now. This asks Postgres instead: every table with a
+    tenant_id must enable and FORCE row-level security, and carry a
+    tenant_isolation policy that checks both reads (USING) and writes
+    (WITH CHECK). A table added without them fails here, even if no test
+    ever writes to it."""
+    engine = _sync_engine()
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity, "
+                    "p.qual IS NOT NULL AS has_using, p.with_check IS NOT NULL AS has_check "
+                    "FROM pg_class c "
+                    "JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public' "
+                    "JOIN information_schema.columns col "
+                    "  ON col.table_schema = 'public' AND col.table_name = c.relname "
+                    "  AND col.column_name = 'tenant_id' "
+                    "LEFT JOIN pg_policies p ON p.schemaname = 'public' "
+                    "  AND p.tablename = c.relname AND p.policyname = 'tenant_isolation' "
+                    "WHERE c.relkind = 'r'"
+                )
+            ).all()
+        assert len(rows) >= len(RLS_TABLES)
+        unprotected = [
+            r.relname
+            for r in rows
+            if not (r.relrowsecurity and r.relforcerowsecurity and r.has_using and r.has_check)
+        ]
+        assert unprotected == [], f"tenant tables without full RLS: {unprotected}"
+    finally:
+        engine.dispose()
+
+
+@requires_services
 async def test_one_tenant_cannot_read_anothers_rows() -> None:
     """End-to-end proof through the real session helper: a query with no
     tenant_id predicate of its own still returns only the caller's rows."""
@@ -143,3 +179,12 @@ async def test_tenant_cannot_insert_rows_owned_by_another_tenant() -> None:
                 {"a": str(tenant_a), "b": str(tenant_b)},
             )
         engine.dispose()
+
+
+@requires_services
+async def test_app_sessions_always_plan_with_actual_values() -> None:
+    """Generic plans undo the time-window indexes (PHASE-8 doc, section 3),
+    so every app connection runs with force_custom_plan."""
+    async with tenant_session(uuid.uuid4()) as session:
+        mode = (await session.execute(text("SHOW plan_cache_mode"))).scalar_one()
+    assert mode == "force_custom_plan"

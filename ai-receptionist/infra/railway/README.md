@@ -157,9 +157,15 @@ sessions, and lower `DB_POOL_SIZE`/`DB_MAX_OVERFLOW` if you scale out.
   job's shape changed.
 - **Roll back a migration:** only on purpose, from a machine with the app
   role's `DATABASE_URL`: `cd apps/api && alembic downgrade <revision>`.
-  Migrations 0008–0011 were checked by upgrading, downgrading and upgrading
+  Migrations 0008–0012 were checked by upgrading, downgrading and upgrading
   again in development. A downgrade can drop data added since (e.g. `0011`
   drops callback names), so take a backup first.
+- **Migration 0012 builds indexes `CONCURRENTLY`.** Writes aren't blocked,
+  but each build waits for transactions already open, so run it at a quiet
+  time. A failed build leaves an `INVALID` index that a re-run would skip:
+  find it with `SELECT indexrelid::regclass FROM pg_index WHERE NOT
+  indisvalid;`, drop it, and redeploy. Background and measurements are in
+  `docs/ai-receptionist/PHASE-8-PRODUCTION.md`, section 3.
 - **Backups:** use the provider's backups for Postgres. Redis holds only
   queues and call state; losing it loses queued jobs, not records.
 

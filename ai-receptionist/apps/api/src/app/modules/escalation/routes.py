@@ -4,7 +4,7 @@ callback escalation policy — list requests, mark them worked."""
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, literal_column, select
 
 from app.core.auth import AuthContext, get_current_user, require_role
 from app.core.db import tenant_session
@@ -38,8 +38,14 @@ async def list_callback_requests(
         # order a receptionist works the queue in, not creation time.
         rows = (
             await session.execute(
+                # Within each group, newest first. (This used to order by
+                # id, a random UUID, so the queue's order was arbitrary.)
                 stmt.order_by(
-                    (CallbackRequest.status == "resolved").asc(), CallbackRequest.id.desc()
+                    # A literal, not a bound parameter: Postgres only uses the
+                    # index on (status = 'resolved') when the query's
+                    # expression is identical (migration 0012).
+                    (CallbackRequest.status == literal_column("'resolved'")).asc(),
+                    CallbackRequest.created_at.desc(),
                 )
                 .limit(limit)
                 .offset(offset)

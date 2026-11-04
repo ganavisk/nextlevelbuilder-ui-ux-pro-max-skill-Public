@@ -50,9 +50,27 @@ def get_engine() -> AsyncEngine:
             pool_pre_ping=True,
             pool_size=settings.db_pool_size,
             max_overflow=settings.db_max_overflow,
+            # Always plan with the actual parameter values. asyncpg prepares
+            # statements, and after five runs Postgres may switch to a generic
+            # plan that can't see that `ends_at > now()` excludes years of
+            # history: measured, the availability query then ignores its
+            # index and goes from 0.01 ms to 6 ms. Re-planning these small
+            # queries costs ~0.07 ms. See PHASE-8-PRODUCTION.md, section 3.
+            connect_args={"server_settings": {"plan_cache_mode": "force_custom_plan"}},
         )
         _session_factory = async_sessionmaker(_engine, expire_on_commit=False)
     return _engine
+
+
+async def dispose_engine() -> None:
+    """Close the pool's connections cleanly on shutdown. Without it, each
+    deploy drops them mid-socket: Postgres logs `unexpected EOF on client
+    connection` and holds the slots until it notices."""
+    global _engine, _session_factory
+    if _engine is not None:
+        await _engine.dispose()
+        _engine = None
+        _session_factory = None
 
 
 def get_session_factory() -> async_sessionmaker[AsyncSession]:

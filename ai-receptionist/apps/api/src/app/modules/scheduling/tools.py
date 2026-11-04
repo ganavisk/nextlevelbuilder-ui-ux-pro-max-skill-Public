@@ -262,7 +262,7 @@ def _booked_phrase(tenant: Tenant, service: str, details: dict[str, Any] | None)
     tenant's `scheduling.confirm_detail` (one of its booking fields) is read
     back with the service, so the caller hears the thing most worth checking.
     The service's first letter is lowered for mid-sentence use unless it
-    starts an acronym ("A/C performance check")."""
+    starts an acronym ("MRI scan" stays as written)."""
     phrase = service[:1].lower() + service[1:] if service[1:2].islower() else service
     key = _scheduling_config(tenant).get("confirm_detail")
     value = str((details or {}).get(key, "")).strip() if key else ""
