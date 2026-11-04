@@ -6,12 +6,16 @@ here, becoming a row the dashboard's callback queue reads (Phase 7).
 """
 
 import uuid
+from datetime import datetime
+from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
 from app.core.db import table_of, tenant_session
 from app.core.errors import NotFoundError, ValidationFailedError
 from app.modules.escalation.models import CallbackRequest
+from app.modules.scheduling.availability import next_opening, spoken_day, spoken_time
 
 # open -> contacted -> resolved (migration 0001's CHECK constraint). Not
 # stored as a state machine anywhere else, so this is the one place that
@@ -19,6 +23,35 @@ from app.modules.escalation.models import CallbackRequest
 # rather than relying on the database CHECK to be the only guard (a 500 from
 # a constraint violation is a worse UX than a 422 that names the problem).
 VALID_STATUSES = ("open", "contacted", "resolved")
+
+
+DEFAULT_PROMISE = "Someone from the team will call you back."
+
+
+def callback_promise_for(
+    escalation_policy: dict[str, Any],
+    business_hours: dict[str, list[list[str]]],
+    timezone: str,
+    now: datetime,
+) -> str:
+    """What to tell a caller about when they'll hear back.
+
+    `callback_promise` ("within 30 minutes during shop hours") is only true
+    while the business is open. If the tenant also configures
+    `after_hours_promise`, that is used when it's closed, with `{next_open}`
+    filled in as spoken ("tomorrow at 7:30 am"), so a caller at 9 pm isn't
+    left waiting for a call that won't come until morning.
+    """
+    promise = str(escalation_policy.get("callback_promise") or DEFAULT_PROMISE)
+    after_hours = escalation_policy.get("after_hours_promise")
+    if not after_hours:
+        return promise
+    opens = next_opening(business_hours or {}, timezone, now)
+    if opens is None:
+        return promise
+    today = now.astimezone(ZoneInfo(timezone)).date()
+    when = f"{spoken_day(opens.date(), today)} at {spoken_time(opens)}"
+    return str(after_hours).replace("{next_open}", when)
 
 
 MAX_NAME_LENGTH = 120

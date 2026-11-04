@@ -21,7 +21,8 @@ import copy
 import re
 import uuid
 from collections.abc import Awaitable
-from typing import Any, cast
+from datetime import UTC, datetime
+from typing import Any
 
 from redis.asyncio import Redis
 
@@ -30,7 +31,7 @@ from app.core.phone import NUMBER_UNCLEAR, caller_id_e164, spoken_digits, to_e16
 from app.modules.conversation.faq import NO_ANSWER_FALLBACK, answer_faq
 from app.modules.conversation.providers.base import EmbeddingProvider, LLMProvider
 from app.modules.conversation.qualification import record_answer
-from app.modules.escalation.service import create_callback_request
+from app.modules.escalation.service import callback_promise_for, create_callback_request
 from app.modules.scheduling.providers.base import CalendarProvider
 from app.modules.scheduling.tools import (
     COULD_NOT_CHECK,
@@ -346,11 +347,11 @@ class ToolExecutor:
                         preferred_window=arguments.get("preferred_window"),
                     )
                     logger.info("callback_requested", request_id=str(request_id))
-                    promise = cast(
-                        str,
-                        agent_config.escalation_policy.get(
-                            "callback_promise", "Someone from the team will call you back."
-                        ),
+                    promise = callback_promise_for(
+                        agent_config.escalation_policy or {},
+                        tenant.business_hours or {},
+                        tenant.timezone,
+                        datetime.now(UTC),
                     )
                     if different and callback is not None:
                         # Read back as single digits: the caller's last chance

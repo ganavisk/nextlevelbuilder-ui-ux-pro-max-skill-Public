@@ -77,6 +77,32 @@ def generate_candidate_slots(
     return slots
 
 
+def next_opening(
+    business_hours: dict[str, list[list[str]]], timezone: str, now: datetime
+) -> datetime | None:
+    """When the business next opens, or None if it is open right now (or has
+    no hours configured, so "closed" can't be judged).
+
+    Used so the agent never promises "within 30 minutes" at midnight: after
+    hours it can say when the shop actually opens. Looks a week ahead, in the
+    business's local time, across every opening interval of each day.
+    """
+    tz = ZoneInfo(timezone)
+    local_now = now.astimezone(tz)
+    upcoming: list[datetime] = []
+    for offset in range(8):
+        day = local_now.date() + timedelta(days=offset)
+        for opening in business_hours.get(WEEKDAY_KEYS[day.weekday()], []):
+            (oh, om), (ch, cm) = _parse_hhmm(opening[0]), _parse_hhmm(opening[1])
+            opens = datetime(day.year, day.month, day.day, oh, om, tzinfo=tz)
+            closes = datetime(day.year, day.month, day.day, ch, cm, tzinfo=tz)
+            if opens <= local_now < closes:
+                return None
+            if opens > local_now:
+                upcoming.append(opens)
+    return min(upcoming) if upcoming else None
+
+
 def overlaps(slot: TimeSlot, busy: TimeSlot) -> bool:
     """Half-open intervals: a slot ending exactly when a busy period starts
     does not overlap, so back-to-back appointments remain bookable."""

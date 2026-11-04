@@ -29,6 +29,13 @@ give a name still gets their callback.
 **Configuration:** none beyond `core`; escalation triggers and the callback
 promise live in the tenant's `agent_configs.escalation_policy`.
 
+**What the caller is promised (`callback_promise_for`):** `callback_promise`
+while the business is open. If the policy also has `after_hours_promise`, that
+is used while it's closed, with `{next_open}` filled in from the business
+hours as spoken ("tomorrow at 7:30 am", "Monday at 7:30 am"), so a caller at
+9 pm isn't told "within 30 minutes". The prompt tells the agent to relay what
+the tool returns rather than quoting a fixed promise of its own.
+
 **Future improvements:** SLA timers / overdue-callback alerts; optional live
 transfer as a v2 escalation mode behind the same trigger set.
 

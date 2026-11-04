@@ -76,17 +76,15 @@ def assemble_system_prompt(tenant: Tenant, config: AgentConfig) -> str:
     )
     qualification_block = _format_qualification_flow(config.qualification)
     booking_block = _format_booking_fields(booking_fields(tenant), config.qualification)
-    escalation = config.escalation_policy.get(
-        "callback_promise", "Someone from the team will call you back."
-    )
     return (
         f"{config.system_prompt}{forbidden_block}{qualification_block}{booking_block}\n\n"
         f"For any factual question about the business (hours, services, prices, "
         f"policies, location) use the answer_faq tool rather than answering from memory.\n\n"
         f"If the caller asks for a human or you cannot help, use the request_callback "
         f"tool: collect their name and reason first (and a number only if they want a "
-        f"call back somewhere other than the phone they're calling from), then say: "
-        f'"{escalation}"'
+        f"call back somewhere other than the phone they're calling from), then tell "
+        f"them what the tool says about when they'll hear back. Don't promise a time "
+        f"of your own: the tool knows whether the business is open."
     )
 
 

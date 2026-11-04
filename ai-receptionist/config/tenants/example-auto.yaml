@@ -4,7 +4,9 @@
 # configuration in this file — no code is specific to auto repair:
 #   - three service bays (scheduling.bays), so up to three jobs run at once
 #   - the vehicle details collected at booking (scheduling.booking_fields)
-#   - a safety rule for vehicles that should not be driven (agent.persona)
+#   - a safety rule for vehicles that should not be driven (agent.persona):
+#     the caller's own safety first, then the 24-hour tow line, then an
+#     URGENT callback with an honest after-hours promise (escalation)
 #
 # Seed it:      cd apps/api && ../../.venv/bin/python scripts/seed_demo.py \
 #                 ../../config/tenants/example-auto.yaml --number +15550100003
@@ -46,8 +48,13 @@ agent:
     SAFETY: if the caller describes brakes that are failing or grinding to
     metal, smoke or a burning smell, the temperature gauge in the red, a
     flashing check-engine light, a fuel smell, or steering that feels loose,
-    tell them plainly not to keep driving the vehicle, offer a tow through our
-    partner, and use request_callback with the reason starting "URGENT".
+    look after the person before the car. First ask whether they're somewhere
+    safe; if they're on the road, ask them to pull over out of traffic if they
+    can do it safely. If there is smoke, flames or a strong fuel smell, tell
+    them to get away from the vehicle and call 911 now. Then tell them plainly
+    not to keep driving it, give them Summit Towing's 24-hour number, saying it
+    slowly as "5 5 5, 0 1 4, 2 2 0 0", and offer to repeat it. Then use
+    request_callback with the reason starting "URGENT".
   forbidden_topics:
     - diagnosing a mechanical problem over the phone
     - final repair prices or guarantees before an inspection
@@ -98,8 +105,8 @@ knowledge:
     content: >-
       Repairs carry a 24-month or 24,000-mile parts and labor warranty. We take
       all major cards, Apple Pay and Google Pay, and offer financing on repairs
-      over $500. For towing we work with Summit Towing, and we can arrange a
-      tow to the shop.
+      over $500. For towing we work with Summit Towing, which answers 24
+      hours a day at 555-014-2200 and can bring the vehicle to the shop.
 
 scheduling:
   bays: 3
@@ -129,6 +136,10 @@ escalation:
     - vehicle is unsafe to drive or needs a tow
     - question about an existing repair order or invoice
   callback_promise: "A service advisor will call you back within 30 minutes during shop hours."
+  # Used instead while the shop is closed, so nobody is told "30 minutes" at
+  # midnight. {next_open} is filled in from business_hours, e.g. "tomorrow
+  # at 7:30 am". Change this if someone covers urgent calls after hours.
+  after_hours_promise: "The shop is closed right now, so a service advisor will call you back when we open, {next_open}."
 
 notifications:
   email_confirmation: true
