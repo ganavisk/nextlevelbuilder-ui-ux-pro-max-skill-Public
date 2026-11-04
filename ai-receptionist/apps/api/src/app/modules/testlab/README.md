@@ -50,6 +50,29 @@ Routes under `/api/v1/test-lab`, all `admin` or `owner` only:
 | GET | `/board?day=YYYY-MM-DD` | the day board |
 | GET | `/activity?after=&limit=` | the activity feed, incremental |
 
+## Scripted scenarios
+
+`config/scenarios/<name>.yaml` holds short scripted calls with what the
+agent must *do*:
+- whether it takes a callback, and that urgent ones start with "URGENT";
+- facts it must say (the tow number, 911);
+- tools it must use (`answer_faq` for an hours question).
+
+Each escalation trigger has at least one scenario (a test enforces that).
+There are also controls the agent must handle itself, so an agent that
+escalates everything fails too.
+
+```bash
+make lab-scenarios SCENARIOS=example-auto REPEAT=3   # API running with ANTHROPIC_API_KEY
+```
+
+`scripts/lab_scenarios.py` plays each one through this API as a simulated
+call, discards the session afterwards, and prints a pass rate per scenario
+plus the transcript and reasons for every failed run. Models vary run to run,
+so read the pass rate, not one result. Exit codes: 0 all passed, 1 some
+failed, 2 couldn't run (API unreachable or no model key). Judging lives in
+`scenarios.py` and is unit-tested.
+
 ## Configuration
 
 - `ANTHROPIC_API_KEY` for simulated calls (the bench and board work without

@@ -1,0 +1,76 @@
+# Test Lab scenarios for the auto shop's escalation triggers.
+#
+# Each scenario is a short simulated call played against the tenant's real
+# prompt and tools. `expect` is checked against what the agent *did* (its tool
+# calls), not how it phrased things, except where `reply_mentions` asks for a
+# specific fact to be said. Controls check the other direction: an agent that
+# escalates everything would pass the trigger cases and fail these.
+#
+# Run (needs ANTHROPIC_API_KEY on the API):
+#   make lab-scenarios SCENARIOS=example-auto REPEAT=3
+
+tenant: ridgeline-auto-care
+
+scenarios:
+  # ── escalation triggers (escalation.triggers in example-auto.yaml) ──────
+  - name: asks for a technician
+    trigger: caller explicitly asks for a person or a technician
+    turns:
+      - "Hi, can I talk to one of your technicians? My truck's making a clunking noise over bumps."
+      - "It's Marcus Bell."
+      - "No, this number's fine. Thanks."
+    expect:
+      callback: true
+
+  - name: question about an invoice
+    trigger: question about an existing repair order or invoice
+    turns:
+      - "I picked my car up yesterday and I think I was charged twice for the alignment on my invoice."
+      - "Priya Raman."
+      - "This number is good, thank you."
+    expect:
+      callback: true
+
+  - name: brakes failing on the highway
+    trigger: vehicle is unsafe to drive or needs a tow
+    turns:
+      - "My brakes are grinding metal on metal and I'm still on the highway. What do I do?"
+      - "Okay, I've pulled over onto the shoulder. My name's Ines Ortega."
+      - "Yes, please have someone call me on this number."
+    expect:
+      callback: true
+      reason_starts_with: URGENT
+      reply_mentions: ["5 5 5"]          # Summit Towing's number, read slowly
+
+  - name: smoke from under the hood
+    trigger: vehicle is unsafe to drive or needs a tow
+    turns:
+      - "There's smoke coming out from under the hood and it smells like something's burning."
+      - "I'm out of the car now. It's Theo Park."
+      - "Yes, call me back on this number please."
+    expect:
+      callback: true
+      reason_starts_with: URGENT
+      reply_mentions: ["911"]
+
+  # ── controls: the receptionist handles these itself ────────────────────
+  - name: control - Saturday hours
+    turns:
+      - "Hi, are you open on Saturdays, and until what time?"
+    expect:
+      callback: false
+      tools: [answer_faq]
+
+  - name: control - oil change price
+    turns:
+      - "How much is a synthetic oil change?"
+    expect:
+      callback: false
+      tools: [answer_faq]
+
+  - name: control - book an oil change
+    turns:
+      - "I'd like to bring my 2019 RAV4 in for an oil change tomorrow morning if you have anything."
+    expect:
+      callback: false
+      tools: [check_availability]

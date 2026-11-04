@@ -2,7 +2,7 @@ VENV ?= .venv
 PY := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 
-.PHONY: check-keys lock install up down db dev worker confirmations crm seed provision migrate revision test lint fmt dashboard-install dashboard-dev dashboard-build
+.PHONY: check-keys lock install up down db dev worker confirmations crm seed lab-scenarios provision migrate revision test lint fmt dashboard-install dashboard-dev dashboard-build
 
 # Regenerate the runtime dependency lock the production image installs from.
 # Resolves apps/api's base dependencies in a throwaway venv, so dev tools
@@ -56,6 +56,14 @@ TENANT ?= dental
 NUMBER ?= +15550100001
 seed:
 	cd apps/api && ../../$(PY) scripts/seed_demo.py ../../config/tenants/example-$(TENANT).yaml --number $(NUMBER)
+
+# Play config/scenarios/$(SCENARIOS).yaml as Test Lab calls against the
+# running API (needs ANTHROPIC_API_KEY there) and report what the agent did.
+#   make lab-scenarios SCENARIOS=example-auto REPEAT=3
+SCENARIOS ?= example-auto
+REPEAT ?= 1
+lab-scenarios:
+	cd apps/api && ../../$(PY) scripts/lab_scenarios.py $(SCENARIOS) --repeat $(REPEAT)
 
 # Connect a tenant's numbers to the voice vendor (first time), or force a full
 # re-push. Dashboard changes are pushed automatically by the crm worker; re-run
