@@ -1,4 +1,8 @@
 # Railway service: worker   (post-call classification (Claude))
+# REFERENCE ONLY: Railway has deprecated Config as Code (railway.toml); new
+# services can't opt in and existing files stop being read on 2026-12-01.
+# Enter these settings in the service's dashboard (README.md, section 2) or
+# port them to Railway's Infrastructure as Code (.railway/railway.ts).
 # No HTTP surface, no migrations: only the api service migrates. See README.md.
 
 [build]

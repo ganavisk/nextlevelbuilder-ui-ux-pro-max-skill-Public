@@ -125,8 +125,10 @@ handler fails to process is retried with jitter, not lost.
 apps/api/          FastAPI modular monolith (source of truth for the backend)
 apps/dashboard/    Next.js dashboard (call history, analytics, settings) — see its README
 config/tenants/    Example tenant configurations (dental, legal, auto repair)
+config/scenarios/  Scripted Test Lab calls (make lab-scenarios)
+docs/              Runbooks (operations, connecting the voice system) and the load-test report
 infra/postgres/    Container init: extensions + the non-superuser app role
-infra/             Deploy blueprints (Railway/Vercel) — populated in Phase 8
+infra/             Deploy guide (infra/railway/README.md), Postgres bootstrap, image smoke test
 .github/workflows/ CI (activates when this folder becomes the repo root)
 ```
 
