@@ -5,6 +5,7 @@ takes a tenant id as a path/query parameter, so there is no way to ask for
 another tenant's data by guessing an id.
 """
 
+from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -14,6 +15,7 @@ from app.core.auth import AuthContext, get_current_user, require_role
 from app.core.config import Settings
 from app.core.errors import ValidationFailedError
 from app.core.util import deep_merge
+from app.modules.escalation.service import example_next_open, validate_promises
 from app.modules.tenants.login import login as login_user
 from app.modules.tenants.repository import (
     create_agent_config_version,
@@ -24,6 +26,8 @@ from app.modules.tenants.repository import (
 from app.modules.tenants.schemas import (
     AgentConfigSummary,
     AgentConfigUpdateRequest,
+    CallbackPromisesPreview,
+    CallbackPromisesUpdate,
     LoginRequest,
     LoginResponse,
     TenantSummary,
@@ -122,10 +126,44 @@ async def update_my_agent_config(
     auth: AuthContext = Depends(require_role("admin")),
 ) -> AgentConfigSummary:
     fields = body.model_dump(exclude_unset=True, exclude_none=True)
+    policy = fields.get("escalation_policy")
+    if policy is not None and ("callback_promise" in policy or "after_hours_promise" in policy):
+        # Same checks as the Settings editor (PUT /tenants/me/callback-promises),
+        # so the raw API can't save a promise callers would hear garbled.
+        validate_promises(
+            policy.get("callback_promise", "Someone from the team will call you back."),
+            policy.get("after_hours_promise", ""),
+        )
     before = await agent_snapshot(auth.tenant_id)
     config = await create_agent_config_version(auth.tenant_id, **fields)
     await resync_if_changed(auth.tenant_id, before, redis=request.app.state.redis)
     return AgentConfigSummary.model_validate(config)
+
+
+@router.put("/tenants/me/callback-promises", response_model=AgentConfigSummary)
+async def update_my_callback_promises(
+    body: CallbackPromisesUpdate, auth: AuthContext = Depends(require_role("admin"))
+) -> AgentConfigSummary:
+    """Edit what callers are told after asking for a call back. Saved as a
+    new agent-config version like any other edit. The callback tool reads the
+    active version on every call, so there is nothing to push to the voice
+    vendor: the next call uses it."""
+    texts = validate_promises(body.callback_promise, body.after_hours_promise)
+    current = await get_active_agent_config(auth.tenant_id)
+    policy = {**(current.escalation_policy or {}), **texts}
+    if not texts["after_hours_promise"]:
+        policy.pop("after_hours_promise")
+    config = await create_agent_config_version(auth.tenant_id, escalation_policy=policy)
+    return AgentConfigSummary.model_validate(config)
+
+
+@router.get("/tenants/me/callback-promises/preview", response_model=CallbackPromisesPreview)
+async def preview_my_callback_promises(
+    auth: AuthContext = Depends(get_current_user),
+) -> CallbackPromisesPreview:
+    tenant = await get_tenant(auth.tenant_id)
+    example = example_next_open(tenant.business_hours or {}, tenant.timezone, datetime.now(UTC))
+    return CallbackPromisesPreview(next_open_example=example)
 
 
 @router.get("/tenants/me/voice-sync", response_model=VoiceSyncSummary)

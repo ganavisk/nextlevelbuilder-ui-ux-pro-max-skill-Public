@@ -58,3 +58,19 @@ export async function retryVoiceSync(): Promise<FormState> {
   revalidatePath("/settings");
   return { error: null, saved: true };
 }
+
+export async function saveCallbackPromises(_prev: FormState, formData: FormData): Promise<FormState> {
+  const callback_promise = String(formData.get("callback_promise") ?? "").trim();
+  const after_hours_promise = String(formData.get("after_hours_promise") ?? "").trim();
+  if (!callback_promise) return { error: "The callback promise can't be empty.", saved: false };
+  try {
+    await apiFetch("/tenants/me/callback-promises", {
+      method: "PUT",
+      body: JSON.stringify({ callback_promise, after_hours_promise }),
+    });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath("/settings");
+  return { error: null, saved: true };
+}

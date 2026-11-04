@@ -5,6 +5,7 @@ trigger (caller asks for a human, out-of-scope question, distress) routes
 here, becoming a row the dashboard's callback queue reads (Phase 7).
 """
 
+import re
 import uuid
 from datetime import datetime
 from typing import Any
@@ -15,7 +16,12 @@ from sqlalchemy import select
 from app.core.db import table_of, tenant_session
 from app.core.errors import NotFoundError, ValidationFailedError
 from app.modules.escalation.models import CallbackRequest
-from app.modules.scheduling.availability import next_opening, spoken_day, spoken_time
+from app.modules.scheduling.availability import (
+    next_opening,
+    next_reopening,
+    spoken_day,
+    spoken_time,
+)
 
 # open -> contacted -> resolved (migration 0001's CHECK constraint). Not
 # stored as a state machine anywhere else, so this is the one place that
@@ -49,9 +55,59 @@ def callback_promise_for(
     opens = next_opening(business_hours or {}, timezone, now)
     if opens is None:
         return promise
+    return str(after_hours).replace(NEXT_OPEN, _spoken(opens, timezone, now))
+
+
+def _spoken(opens: datetime, timezone: str, now: datetime) -> str:
     today = now.astimezone(ZoneInfo(timezone)).date()
-    when = f"{spoken_day(opens.date(), today)} at {spoken_time(opens)}"
-    return str(after_hours).replace("{next_open}", when)
+    return f"{spoken_day(opens.date(), today)} at {spoken_time(opens)}"
+
+
+def example_next_open(
+    business_hours: dict[str, list[list[str]]], timezone: str, now: datetime
+) -> str | None:
+    """What {next_open} would say for a caller who rang after today's
+    closing, for the Settings preview. None without business hours."""
+    opens = next_reopening(business_hours or {}, timezone, now)
+    return _spoken(opens, timezone, now) if opens is not None else None
+
+
+NEXT_OPEN = "{next_open}"
+MAX_PROMISE_LENGTH = 300
+_PLACEHOLDER = re.compile(r"\{[^{}]*\}")
+
+
+def validate_promises(callback_promise: object, after_hours_promise: object) -> dict[str, str]:
+    """Check the two promise texts a dashboard user typed; return the policy
+    keys to merge (an empty after-hours text means "remove it").
+
+    Both are read aloud as written, so a mistyped placeholder ("{next_opne}")
+    would reach callers word for word: refuse anything in braces but
+    {next_open}, and {next_open} itself in the open-hours promise, where it
+    is never filled in."""
+    promise = " ".join(str(callback_promise or "").split())
+    after = " ".join(str(after_hours_promise or "").split())
+    if not promise:
+        raise ValidationFailedError("The callback promise can't be empty.")
+    for label, text in (("callback promise", promise), ("after-hours promise", after)):
+        if len(text) > MAX_PROMISE_LENGTH:
+            raise ValidationFailedError(
+                f"The {label} is too long to say on a call (max {MAX_PROMISE_LENGTH} characters)."
+            )
+    if NEXT_OPEN in promise:
+        raise ValidationFailedError(
+            "{next_open} only works in the after-hours promise; the open-hours one is "
+            "said while you're open."
+        )
+    unknown = _PLACEHOLDER.findall(promise) + [
+        p for p in _PLACEHOLDER.findall(after) if p != NEXT_OPEN
+    ]
+    if unknown:
+        raise ValidationFailedError(
+            f"{unknown[0]} isn't something the receptionist can fill in. Use {NEXT_OPEN} "
+            "for when you next open."
+        )
+    return {"callback_promise": promise, "after_hours_promise": after}
 
 
 MAX_NAME_LENGTH = 120

@@ -36,6 +36,17 @@ hours as spoken ("tomorrow at 7:30 am", "Monday at 7:30 am"), so a caller at
 9 pm isn't told "within 30 minutes". The prompt tells the agent to relay what
 the tool returns rather than quoting a fixed promise of its own.
 
+**Editing (Settings → Callback promise):** `PUT /tenants/me/callback-promises`
+saves both texts as a new agent-config version, merged over the current
+policy so keys the form doesn't show (`mode`, `triggers`) survive; an empty
+after-hours text removes it. `validate_promises` refuses what callers would
+hear garbled: an empty promise, more than 300 characters, any `{...}` in the
+open-hours text, or any placeholder but `{next_open}` after hours (the raw
+agent-config PATCH applies the same checks). The callback tool reads the
+active version on every call, so there is nothing to push to the voice
+vendor. `GET /tenants/me/callback-promises/preview` gives what `{next_open}`
+says for a caller who rang after today's closing, for the live preview.
+
 **Future improvements:** SLA timers / overdue-callback alerts; optional live
 transfer as a v2 escalation mode behind the same trigger set.
 

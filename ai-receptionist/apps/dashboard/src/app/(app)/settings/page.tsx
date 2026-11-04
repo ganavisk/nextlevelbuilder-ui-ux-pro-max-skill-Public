@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { apiFetch } from "@/lib/api";
 import { readSession } from "@/lib/session";
-import type { AgentConfig, Integration, Tenant, VoiceSync } from "@/lib/types";
+import type { AgentConfig, CallbackPromisesPreview, Integration, Tenant, VoiceSync } from "@/lib/types";
 import { Badge, btn, Notice, PageHeader, Section } from "@/components/ui";
-import { AgentForm, TenantForm } from "./forms";
+import { AgentForm, CallbackPromisesForm, TenantForm } from "./forms";
 import { VoiceSyncRow } from "./voice-sync";
 
 export const metadata: Metadata = { title: "Settings" };
@@ -34,11 +34,12 @@ export default async function SettingsPage({
   searchParams: Promise<{ connected?: string; error?: string }>;
 }) {
   const sp = await searchParams;
-  const [tenant, agent, integrations, voiceSync, session] = await Promise.all([
+  const [tenant, agent, integrations, voiceSync, promisePreview, session] = await Promise.all([
     apiFetch<Tenant>("/tenants/me"),
     apiFetch<AgentConfig>("/tenants/me/agent-config"),
     apiFetch<Integration[]>("/integrations"),
     apiFetch<VoiceSync>("/tenants/me/voice-sync"),
+    apiFetch<CallbackPromisesPreview>("/tenants/me/callback-promises/preview"),
     readSession(),
   ]);
   const readOnly = session?.role === "viewer";
@@ -89,6 +90,14 @@ export default async function SettingsPage({
         }
       >
         <AgentForm agent={agent} sync={voiceSync} readOnly={readOnly} />
+      </Section>
+
+      <Section title="Callback promise">
+        <CallbackPromisesForm
+          policy={agent.escalation_policy}
+          nextOpenExample={promisePreview.next_open_example}
+          readOnly={readOnly}
+        />
       </Section>
     </>
   );

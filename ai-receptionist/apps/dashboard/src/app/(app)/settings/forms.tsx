@@ -1,8 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useRef, useState } from "react";
 import { btn, Notice } from "@/components/ui";
-import { saveAgent, saveTenant, type FormState } from "./actions";
+import { saveAgent, saveCallbackPromises, saveTenant, type FormState } from "./actions";
 import type { AgentConfig, VoiceSync } from "@/lib/types";
 
 const initial: FormState = { error: null, saved: false };
@@ -130,6 +130,110 @@ export function TenantForm({
       {!readOnly && (
         <button type="submit" disabled={pending} className={`${btn.base} ${btn.primary} self-start`}>
           {pending ? "Saving..." : "Save timezone"}
+        </button>
+      )}
+    </form>
+  );
+}
+
+const NEXT_OPEN = "{next_open}";
+
+/** What callers are told after asking for a call back, during and outside
+ * opening hours. Read by the callback tool on every call, so a save needs no
+ * push to the phone agent: the next call uses it. */
+export function CallbackPromisesForm({
+  policy,
+  nextOpenExample,
+  readOnly,
+}: {
+  policy: Record<string, unknown>;
+  nextOpenExample: string | null;
+  readOnly: boolean;
+}) {
+  const [state, action, pending] = useActionState(saveCallbackPromises, initial);
+  const [open, setOpen] = useState(String(policy.callback_promise ?? ""));
+  const [closed, setClosed] = useState(String(policy.after_hours_promise ?? ""));
+  const closedRef = useRef<HTMLTextAreaElement>(null);
+  const example = nextOpenExample ?? "when you next open";
+
+  const insertOpening = () => {
+    const el = closedRef.current;
+    const at = el?.selectionStart ?? closed.length;
+    const next = closed.slice(0, at) + NEXT_OPEN + closed.slice(el?.selectionEnd ?? at);
+    setClosed(next);
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(at + NEXT_OPEN.length, at + NEXT_OPEN.length);
+    });
+  };
+
+  return (
+    <form action={action} className="flex max-w-2xl flex-col gap-5">
+      {state.error ? (
+        <Notice tone="bad">{state.error}</Notice>
+      ) : state.saved ? (
+        <Notice tone="good">Saved. The next call uses it.</Notice>
+      ) : null}
+      <div className="flex flex-col gap-2">
+        <label htmlFor="callback_promise" className="text-[13px] font-medium text-label-2">
+          While you&apos;re open
+        </label>
+        <textarea
+          id="callback_promise"
+          name="callback_promise"
+          rows={2}
+          value={open}
+          onChange={(e) => setOpen(e.target.value)}
+          disabled={readOnly}
+          maxLength={300}
+          className={`${input} resize-y`}
+        />
+        <p className="text-[13px] text-label-2">
+          What callers hear after asking for a call back during opening hours.
+        </p>
+      </div>
+      <div className="flex flex-col gap-2">
+        <div className="flex items-end justify-between gap-3">
+          <label htmlFor="after_hours_promise" className="text-[13px] font-medium text-label-2">
+            After hours <span className="font-normal">(optional)</span>
+          </label>
+          {!readOnly && (
+            <button type="button" onClick={insertOpening} className={`${btn.base} ${btn.plain} h-7 px-2 text-[13px]`}>
+              Insert opening time
+            </button>
+          )}
+        </div>
+        <textarea
+          ref={closedRef}
+          id="after_hours_promise"
+          name="after_hours_promise"
+          rows={2}
+          value={closed}
+          onChange={(e) => setClosed(e.target.value)}
+          disabled={readOnly}
+          maxLength={300}
+          placeholder="e.g. We're closed right now, so we'll call you back when we open, {next_open}."
+          className={`${input} resize-y`}
+        />
+        <p className="text-[13px] text-label-2">
+          Used while you&apos;re closed. <span className="font-mono">{NEXT_OPEN}</span> becomes when you
+          next open, worked out from your hours. Leave empty to use the open-hours promise at all times.
+        </p>
+      </div>
+      <div className="rounded-[10px] bg-surface-2 px-3 py-2.5 text-[14px]" aria-live="polite">
+        <p className="text-[12px] font-medium uppercase tracking-wide text-label-2">Callers hear</p>
+        <p className="mt-1">
+          <span className="text-label-2">Open: </span>
+          {open.trim() || <span className="text-label-3">nothing yet</span>}
+        </p>
+        <p className="mt-1">
+          <span className="text-label-2">Closed: </span>
+          {closed.trim() ? closed.trim().split(NEXT_OPEN).join(example) : open.trim() || "—"}
+        </p>
+      </div>
+      {!readOnly && (
+        <button type="submit" disabled={pending} className={`${btn.base} ${btn.primary} self-start`}>
+          {pending ? "Saving..." : "Save callback promise"}
         </button>
       )}
     </form>

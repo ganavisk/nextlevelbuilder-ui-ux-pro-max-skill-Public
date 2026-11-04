@@ -14,6 +14,11 @@ export interface User {
   role: Role;
 }
 
+export interface CallbackPromisesPreview {
+  /** What {next_open} says for a caller who rang after today's closing; null without hours. */
+  next_open_example: string | null;
+}
+
 /** Whether the phone agent callers reach has the saved settings. */
 export interface VoiceSync {
   state: "live" | "updating" | "failed" | "not_connected";

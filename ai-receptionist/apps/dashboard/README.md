@@ -76,6 +76,15 @@ in flight the page re-renders every 3 s (for up to 2 minutes, paused while the
 tab is hidden), so the save notice changes from "Sending it to the phone
 agent..." to "Saved and live" without a reload.
 
+## Callback promise
+
+Settings → **Callback promise** edits what callers hear after asking for a
+call back: one text for opening hours and an optional one for after hours,
+where `{next_open}` becomes the next opening time ("tomorrow at 7:30 am").
+**Insert opening time** puts the placeholder at the cursor, so it can't be
+mistyped. A preview shows both, filled in from the real business hours. A
+save takes effect on the next call, with no phone-agent update to wait for.
+
 ## Roles
 
 `viewer` can read everything. `admin` and `owner` can cancel appointments, work callbacks,

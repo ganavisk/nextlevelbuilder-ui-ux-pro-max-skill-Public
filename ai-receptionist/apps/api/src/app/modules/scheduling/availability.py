@@ -77,6 +77,24 @@ def generate_candidate_slots(
     return slots
 
 
+def _opening_intervals(
+    business_hours: dict[str, list[list[str]]], tz: ZoneInfo, from_day: date, days: int
+) -> list[tuple[datetime, datetime]]:
+    """Every (opens, closes) interval of `days` local days from `from_day`."""
+    intervals = []
+    for offset in range(days):
+        day = from_day + timedelta(days=offset)
+        for opening in business_hours.get(WEEKDAY_KEYS[day.weekday()], []):
+            (oh, om), (ch, cm) = _parse_hhmm(opening[0]), _parse_hhmm(opening[1])
+            intervals.append(
+                (
+                    datetime(day.year, day.month, day.day, oh, om, tzinfo=tz),
+                    datetime(day.year, day.month, day.day, ch, cm, tzinfo=tz),
+                )
+            )
+    return intervals
+
+
 def next_opening(
     business_hours: dict[str, list[list[str]]], timezone: str, now: datetime
 ) -> datetime | None:
@@ -89,18 +107,31 @@ def next_opening(
     """
     tz = ZoneInfo(timezone)
     local_now = now.astimezone(tz)
-    upcoming: list[datetime] = []
-    for offset in range(8):
-        day = local_now.date() + timedelta(days=offset)
-        for opening in business_hours.get(WEEKDAY_KEYS[day.weekday()], []):
-            (oh, om), (ch, cm) = _parse_hhmm(opening[0]), _parse_hhmm(opening[1])
-            opens = datetime(day.year, day.month, day.day, oh, om, tzinfo=tz)
-            closes = datetime(day.year, day.month, day.day, ch, cm, tzinfo=tz)
-            if opens <= local_now < closes:
-                return None
-            if opens > local_now:
-                upcoming.append(opens)
+    upcoming = []
+    for opens, closes in _opening_intervals(business_hours, tz, local_now.date(), 8):
+        if opens <= local_now < closes:
+            return None
+        if opens > local_now:
+            upcoming.append(opens)
     return min(upcoming) if upcoming else None
+
+
+def next_reopening(
+    business_hours: dict[str, list[list[str]]], timezone: str, now: datetime
+) -> datetime | None:
+    """When a caller who rang after closing would be told the business opens:
+    the next opening if it's closed now, else the first opening after the
+    current interval ends. For previewing the after-hours promise at any
+    time of day."""
+    opens = next_opening(business_hours, timezone, now)
+    if opens is not None:
+        return opens
+    tz = ZoneInfo(timezone)
+    local_now = now.astimezone(tz)
+    for start, closes in _opening_intervals(business_hours, tz, local_now.date(), 1):
+        if start <= local_now < closes:
+            return next_opening(business_hours, timezone, closes)
+    return None
 
 
 def overlaps(slot: TimeSlot, busy: TimeSlot) -> bool:

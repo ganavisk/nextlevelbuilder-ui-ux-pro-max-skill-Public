@@ -89,6 +89,21 @@ class AgentConfigSummary(BaseModel):
     escalation_policy: dict[str, Any]
 
 
+class CallbackPromisesUpdate(BaseModel):
+    """The two escalation-policy texts the dashboard edits. Merged into the
+    current policy, so keys the form doesn't show (mode, triggers) survive."""
+
+    callback_promise: str
+    after_hours_promise: str = ""
+
+
+class CallbackPromisesPreview(BaseModel):
+    """For the Settings preview: what {next_open} says for a caller who rang
+    after today's closing, from the real business hours (None without hours)."""
+
+    next_open_example: str | None
+
+
 class AgentConfigUpdateRequest(BaseModel):
     """All fields optional; omitted fields carry over from the current
     active version (see repository.create_agent_config_version) rather than
