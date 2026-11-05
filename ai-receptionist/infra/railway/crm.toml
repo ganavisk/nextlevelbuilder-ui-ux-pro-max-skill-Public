@@ -1,0 +1,22 @@
+# Railway service: crm   (CRM sync (HubSpot) + voice-agent sync)
+# REFERENCE ONLY: Railway has deprecated Config as Code (railway.toml); new
+# services can't opt in and existing files stop being read on 2026-12-01.
+# Enter these settings in the service's dashboard (README.md, section 2) or
+# port them to Railway's Infrastructure as Code (.railway/railway.ts).
+# No HTTP surface, no migrations: only the api service migrates. See README.md.
+#
+# Also consumes queue:voice_sync, pushing dashboard settings changes to the
+# Vapi assistant, so besides the CRM variables it needs the same voice
+# variables as the api service: VOICE_PROVIDER, VAPI_API_KEY,
+# VAPI_WEBHOOK_SECRET, PUBLIC_WEBHOOK_BASE_URL, TWILIO_ACCOUNT_SID and
+# TWILIO_AUTH_TOKEN. Without them a save shows "not updated" in Settings.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"        # relative to the service's Root Directory (ai-receptionist/apps/api)
+
+[deploy]
+startCommand = "docker-entrypoint.sh crm"
+# A queue consumer that exits for any reason should come back; the queue
+# reclaims whatever job it was holding on startup.
+restartPolicyType = "always"

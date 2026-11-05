@@ -1,0 +1,23 @@
+{
+  "message": {
+    "type": "end-of-call-report",
+    "endedReason": "customer-ended-call",
+    "cost": 0.37,
+    "call": {
+      "id": "vapi-call-0001",
+      "customer": { "number": "+15550002222" }
+    },
+    "phoneNumber": { "number": "+15550100001" },
+    "artifact": {
+      "recordingUrl": "https://storage.vapi.ai/recordings/vapi-call-0001.wav",
+      "transcript": "AI: Thank you for calling...\nUser: Hi, do you take new patients?",
+      "messages": [
+        { "role": "bot", "message": "Thank you for calling Bright Smile Dental. How can I help you today?", "time": 1752418800000 },
+        { "role": "user", "message": "Hi, do you take new patients?", "time": 1752418806000 },
+        { "role": "bot", "message": "We do! I'd be happy to get you scheduled for a first visit.", "time": 1752418810000 },
+        { "role": "system", "message": "internal frame that must not appear in the transcript", "time": 1752418811000 }
+      ]
+    },
+    "timestamp": "2026-07-13T15:03:12.000Z"
+  }
+}

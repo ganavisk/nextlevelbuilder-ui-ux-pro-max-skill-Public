@@ -1,0 +1,106 @@
+# Example tenant configuration — law firm.
+# This file documents the configuration surface; at runtime this data lives in
+# the `tenants` / `agent_configs` tables and is edited via the dashboard.
+tenant:
+  slug: hartley-law
+  name: Hartley & Associates
+  vertical: legal
+  timezone: America/Chicago
+  business_hours:
+    mon: [["09:00", "18:00"]]
+    tue: [["09:00", "18:00"]]
+    wed: [["09:00", "18:00"]]
+    thu: [["09:00", "18:00"]]
+    fri: [["09:00", "17:00"]]
+
+agent:
+  # ElevenLabs voice, spoken through the Vapi agent — see the dental config
+  # and docs/runbooks/connecting-the-voice-system.md for setup.
+  # "Mike - Reception Desk Pro": calm pace, confident delivery, built for
+  # phone-line clarity — professional and discreet without reading as warm/
+  # casual, which would undercut this persona's deliberate formality.
+  # Alternative if you want more gravitas: "Edmund - Brit Customer Care"
+  # (mlvXFS1MP5qndOFkWz1M).
+  voice_provider: 11labs
+  voice_id: xM0tQVvjAbr3ksKlp1EE
+  voice_model: eleven_turbo_v2_5
+  language: en
+  first_message: >-
+    You've reached Hartley and Associates. Please note this call may be
+    recorded. This is the firm's virtual receptionist — how may I direct
+    your inquiry?
+  persona: >-
+    Professional, discreet intake receptionist for a law firm. Answers
+    questions about practice areas, consultation process, and fees from the
+    knowledge base only. Never gives legal advice, never comments on case
+    merits, and never creates an attorney-client relationship — such
+    questions are recorded for an attorney callback.
+  forbidden_topics:
+    - legal advice or case-merit opinions
+    - guarantees of outcomes
+    - discussing other clients or ongoing matters
+
+qualification:
+  - key: matter_type
+    question: "What type of legal matter is this regarding?"
+    type: choice
+    options: [family, personal_injury, estate, business, criminal, other]
+  - key: urgency
+    question: "Is there a court date or deadline coming up?"
+    type: boolean
+    # The question is already phrased yes/no; `scoring` keys off the parsed
+    # true/false answer (the boolean branch of score_answer, same pattern as
+    # dental's `pain` question) rather than the caller's literal words. A
+    # `type: text` answer here would score against the raw utterance, which
+    # would only ever match the literal string "has_deadline" — i.e. never.
+    scoring: { true: 30 }
+  - key: existing_client
+    question: "Are you an existing client of the firm?"
+    type: boolean
+  - key: summary
+    question: "In a sentence or two, what happened?"
+    type: text
+
+# FAQ knowledge base — chunked and embedded on seed (make seed), retrieved
+# via RAG for the answer_faq tool. Grounds every answer; the agent never
+# answers from memory (Phase 1 Risk R3).
+knowledge:
+  - title: "Practice areas"
+    content: >-
+      Hartley and Associates handles family law, personal injury, estate
+      planning, and business law matters. We do not currently handle
+      criminal defense.
+  - title: "Consultation fees"
+    content: >-
+      Initial consultations are $150 for 30 minutes or $250 for 60 minutes.
+      The fee is waived if you retain the firm for representation.
+  - title: "Office hours and location"
+    content: >-
+      Our office is open Monday through Friday, 9am to 6pm (5pm on Fridays).
+      We are located at 200 Congress Avenue, Suite 400.
+
+scheduling:
+  services:
+    - { name: "Initial consultation (30 min)", duration_minutes: 30 }
+    - { name: "Initial consultation (60 min)", duration_minutes: 60 }
+  min_notice_hours: 12
+
+escalation:
+  mode: voicemail_callback     # v1 policy: no live transfer
+  triggers:
+    - caller explicitly asks for an attorney or a human
+    - any request for legal advice
+    - opposing party or represented-party call (conflict risk)
+  callback_promise: "A member of our team will return your call by the end of the business day."
+
+notifications:
+  email_confirmation: true
+  sms_confirmation: true
+  sms_reminder_hours_before: 24
+
+# Dashboard login for the demo owner account (Phase 7). See the dental
+# config for why this only ever belongs in a demo file.
+dashboard:
+  owner_email: owner@hartleylaw.example
+  owner_name: Morgan Hartley
+  owner_password: demo-password-not-for-production

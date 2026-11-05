@@ -1,0 +1,130 @@
+# Example tenant configuration — dental practice.
+# This file documents the configuration surface; at runtime this data lives in
+# the `tenants` / `agent_configs` tables and is edited via the dashboard.
+tenant:
+  slug: bright-smile-dental
+  name: Bright Smile Dental
+  vertical: dental
+  timezone: America/New_York
+  business_hours:
+    mon: [["08:00", "17:00"]]
+    tue: [["08:00", "17:00"]]
+    wed: [["08:00", "17:00"]]
+    thu: [["08:00", "17:00"]]
+    fri: [["08:00", "13:00"]]
+
+agent:
+  # ElevenLabs voice, spoken through the Vapi agent. `voice_provider` is what
+  # tells Vapi whose library `voice_id` comes from — without it the id is
+  # ignored and you get Vapi's default voice.
+  # Requires your ElevenLabs API key added in the Vapi dashboard under
+  # Provider Keys (see docs/runbooks/connecting-the-voice-system.md).
+  #
+  # "Diane - Friendly Warm Female Voice": built explicitly as a warm,
+  # professional receptionist voice with clear diction — matches the "Amy"
+  # persona below without an off-vertical framing (unlike alternatives built
+  # for other industries). Alternative if you want to differentiate accent:
+  # "Amara - Warm African-British Professional" (fFAtoTPtP0TtMyhbR3L9).
+  voice_provider: 11labs
+  voice_id: u91OxrFDaRINovYRRue2
+  # Low-latency model: the standard multilingual model adds enough delay to
+  # be audible on a phone call (NFR-01 budget).
+  voice_model: eleven_turbo_v2_5
+  language: en
+  first_message: >-
+    Thank you for calling Bright Smile Dental. This call may be recorded for
+    quality purposes. This is Amy, the practice's virtual receptionist —
+    how can I help you today?
+  persona: >-
+    Warm, efficient front-desk receptionist for a family dental practice.
+    Answers questions about services, insurance, and hours from the knowledge
+    base only. Never gives clinical or medical advice — clinical questions
+    are recorded for a callback from the practice.
+  forbidden_topics:
+    - clinical or medical advice
+    - medication dosages
+    - fee negotiation beyond published prices
+
+qualification:
+  - key: patient_status
+    question: "Are you a current patient with us, or would this be your first visit?"
+    type: choice
+    options: [existing, new]
+  - key: reason
+    question: "What would you like to come in for?"
+    type: text
+  - key: pain
+    question: "Are you currently in any pain?"
+    type: boolean
+    scoring: { true: 30 }        # urgent — prioritize callback/booking
+  - key: insurance
+    question: "Do you have dental insurance, and if so, which provider?"
+    type: text
+
+# FAQ knowledge base — chunked and embedded on seed (make seed), retrieved
+# via RAG for the answer_faq tool. Grounds every answer; the agent never
+# answers from memory (Phase 1 Risk R3).
+knowledge:
+  - title: "New patients & insurance"
+    content: >-
+      We welcome new patients of all ages. We accept most major PPO dental
+      insurance plans including Delta Dental, Cigna, and MetLife. We also
+      offer an in-house savings plan for patients without insurance.
+  - title: "Hours and location"
+    content: >-
+      We are open Monday through Thursday 8am to 5pm, and Friday 8am to 1pm.
+      We are closed on weekends. The office is located at 100 Main Street.
+  - title: "Emergency dental care"
+    content: >-
+      We reserve same-day appointment slots for dental emergencies such as
+      severe pain, swelling, or a knocked-out tooth. Call us right away and
+      we will do our best to see you the same day.
+
+scheduling:
+  services:
+    - { name: "Cleaning & check-up", duration_minutes: 60 }
+    - { name: "Emergency exam", duration_minutes: 30 }
+    - { name: "Consultation", duration_minutes: 30 }
+  min_notice_hours: 2
+
+escalation:
+  mode: voicemail_callback     # v1 policy: no live transfer
+  triggers:
+    - caller explicitly asks for a human
+    - clinical question outside the knowledge base
+    - caller is distressed or in severe pain
+  callback_promise: "Someone from our team will call you back within one business hour."
+
+# CRM field mapping. Only qualification answers listed here are pushed —
+# writing to a property the practice never created fails the whole sync in
+# HubSpot, and inventing fields in someone's CRM is worse than omitting them.
+crm:
+  enabled: true
+  deal_pipeline: default
+  deal_title: "{service} — {name}"
+  stage_by_outcome:
+    appointment_booked: appointmentscheduled
+    lead_qualified: qualifiedtobuy
+    default: appointmentscheduled
+  contact_properties:      # qualification answer key -> CRM property name
+    pain: urgency
+    insurance: insurance_provider
+    patient_status: lifecyclestage
+  # A deal per call would flood the practice's pipeline with wrong numbers;
+  # only a booking or a scoring lead earns one.
+  deal_min_score: 30
+
+notifications:
+  email_confirmation: true
+  sms_confirmation: true
+  sms_reminder_hours_before: 24
+
+# Dashboard login for the demo owner account (Phase 7). `make seed` hashes
+# this password and creates the user; it exists only to make the demo
+# reachable end-to-end without a signup flow. Never put a real password in a
+# config file — a production tenant gets its owner account through an
+# invite flow instead (see apps/dashboard's known-gaps note).
+dashboard:
+  owner_email: owner@brightsmile.example
+  owner_name: Jamie Rivera
+  owner_password: demo-password-not-for-production

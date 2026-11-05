@@ -1,0 +1,18 @@
+{
+  "message": {
+    "type": "tool-calls",
+    "toolCallList": [
+      {
+        "id": "toolcall-0001",
+        "name": "check_availability",
+        "arguments": { "service": "Cleaning & check-up", "date": "2026-07-20" }
+      }
+    ],
+    "call": {
+      "id": "vapi-call-0001",
+      "customer": { "number": "+15550002222" }
+    },
+    "phoneNumber": { "number": "+15550100001" },
+    "timestamp": "2026-07-13T15:01:40.000Z"
+  }
+}

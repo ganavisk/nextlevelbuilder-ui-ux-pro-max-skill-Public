@@ -51,3 +51,6 @@ out/
 .claude/settings.local.json
 .claude/session-state/
 ui-ux-pro-max-website/*
+
+# Local Redis snapshot written by a dev redis-server started in this directory
+dump.rdb

@@ -1,0 +1,13 @@
+{
+  "message": {
+    "type": "status-update",
+    "status": "in-progress",
+    "call": {
+      "id": "vapi-call-0001",
+      "orgId": "org-demo",
+      "customer": { "number": "+15550002222" }
+    },
+    "phoneNumber": { "number": "+15550100001" },
+    "timestamp": "2026-07-13T15:00:00.000Z"
+  }
+}
