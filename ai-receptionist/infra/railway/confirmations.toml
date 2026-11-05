@@ -7,7 +7,7 @@
 
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"        # relative to the service's Root Directory (apps/api)
+dockerfilePath = "Dockerfile"        # relative to the service's Root Directory (ai-receptionist/apps/api)
 
 [deploy]
 startCommand = "docker-entrypoint.sh confirmations"

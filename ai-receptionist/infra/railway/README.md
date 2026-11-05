@@ -14,6 +14,12 @@ One Docker image (`apps/api/Dockerfile`) runs as four Railway services; the
 role is the start command's argument (`docker-entrypoint.sh <role>`). Only
 `api` serves HTTP and only `api` runs migrations.
 
+> **Paths.** The platform lives in the `ai-receptionist/` folder of this
+> repository, so every Root Directory below starts with `ai-receptionist/`.
+> If that folder ever becomes a repository of its own, drop the prefix.
+> Railway's Root Directory is relative to the repository root, not to this
+> folder: with a missing prefix, Railway finds no Dockerfile and the build fails.
+
 > **Railway Config as Code is going away.** Railway has deprecated
 > `railway.toml`/`railway.json`: new services can't opt in, and existing files
 > stop being read on **2026-12-01**. Its replacement is Infrastructure as Code
@@ -48,8 +54,12 @@ Postgres service's own URL variable; build it for `receptionist_app`. Any of
 Postgres has no point-in-time recovery, deploy `infra/postgres/image` as its
 own service. That's Postgres 16, pgvector and pgBackRest, with the backup
 scheduler built in. Set it up like this (not yet tried on Railway itself):
-- **Root Directory** `infra`; Dockerfile `postgres/image/Dockerfile`
-  (`RAILWAY_DOCKERFILE_PATH`).
+- **Root Directory** `ai-receptionist/infra`; Dockerfile
+  `postgres/image/Dockerfile` (the `RAILWAY_DOCKERFILE_PATH` variable). If
+  the build says it can't find the Dockerfile, use the full path
+  `ai-receptionist/infra/postgres/image/Dockerfile`. Keep the Root Directory
+  as it is either way: the Dockerfile copies files from `pgbackrest/` and
+  `postgres/`, which must be inside the build context.
 - **A volume** mounted at `/var/lib/postgresql/data`.
 - **No public domain or TCP proxy.** The API reaches it over the private
   network.
@@ -67,7 +77,7 @@ survive idle-connection reaping (`core/queue.py: worker_redis`).
 ## 2. The services
 
 Create one service per row. All four build from this repo with **Root
-Directory `apps/api`** and the **Dockerfile** builder.
+Directory `ai-receptionist/apps/api`** and the **Dockerfile** builder.
 
 | Service | Start command | Pre-deploy | Healthcheck | Restart | Public domain |
 |---|---|---|---|---|---|
@@ -125,7 +135,7 @@ exported (it never prints more than the last 4 characters).
    the pre-deploy step runs `alembic upgrade head`, then `/readyz` must pass.
    Generate its public domain and set `PUBLIC_WEBHOOK_BASE_URL` to it.
 3. Create `worker`, `confirmations` and `crm`.
-4. **Vercel:** import the repo with Root Directory `apps/dashboard` (Next.js;
+4. **Vercel:** import the repo with Root Directory `ai-receptionist/apps/dashboard` (Next.js;
    `vercel.json` pins `npm ci` and `npm run build`). Set `API_BASE_URL` to the
    `api` URL. Back on Railway, set `DASHBOARD_BASE_URL` and `CORS_ORIGINS` on
    `api` to the Vercel URL.

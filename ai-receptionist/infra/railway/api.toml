@@ -6,7 +6,7 @@
 
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"        # relative to the service's Root Directory (apps/api)
+dockerfilePath = "Dockerfile"        # relative to the service's Root Directory (ai-receptionist/apps/api)
 
 [deploy]
 # `docker-entrypoint.sh <role>` works whether the platform replaces the image
