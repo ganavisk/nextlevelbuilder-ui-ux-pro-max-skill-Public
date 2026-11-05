@@ -15,7 +15,7 @@
 | **Sentry** that can't leak call data (nothing collected, scrubbed, no 4xx) | `core/observability.py` | ✅ end-to-end leak test |
 | **Bounded in-call latency** (SDK timeouts; a deadline on read tools) | `core/config.py`, `conversation/tools.py` | ✅ |
 | **Idempotent end-of-call and post-call handoffs** | `telephony/service.py`, `workers/post_call.py` | ✅ redelivery tests |
-| **CI**: api as the restricted role, `mypy --strict`, dashboard build, image smoke | `ai-receptionist/.github/workflows/ci.yml` | ✅ |
+| **CI**: api as the restricted role, `mypy --strict`, dashboard build, image smoke, Postgres image | `.github/workflows/ai-receptionist-ci.yml` (repository root) | ✅ statically checked (actionlint); first GitHub run pending |
 | **Railway and Vercel deploy guide**, security headers, connection budget | `infra/railway/README.md`, `apps/dashboard/vercel.json` | 📄 written; not run against Railway (§5) |
 | **Load test** of the live call path, with integrity checks | `scripts/loadtest*.py`, `docs/load-test.md` | ✅ 0 errors, 0 overlaps after the fix |
 | **Operations runbook** and **dead-letter requeue tool** | `docs/runbooks/operations.md`, `scripts/requeue_dead.py` | ✅ 4 tests (atomic move) |

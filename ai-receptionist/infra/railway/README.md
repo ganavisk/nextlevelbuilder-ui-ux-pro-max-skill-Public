@@ -91,9 +91,10 @@ Directory `ai-receptionist/apps/api`** and the **Dockerfile** builder.
 - `worker` runs post-call summaries and lead scoring (Claude).
   `confirmations` sends booking emails and texts. `crm` syncs HubSpot **and**
   pushes Settings changes to the Vapi assistant (`queue:voice_sync`).
-- Turn on **Wait for CI** so a deploy waits for `.github/workflows/ci.yml`
-  (lint, types, tests against Postgres and Redis, a production image smoke
-  test).
+- Turn on **Wait for CI** so a deploy waits for the repository-root workflow
+  `.github/workflows/ai-receptionist-ci.yml`: lint, types, tests against
+  Postgres and Redis, the production image smoke test, and the Postgres
+  image built and tested.
 
 ## 3. Environment variables
 

@@ -129,8 +129,11 @@ config/scenarios/  Scripted Test Lab calls (make lab-scenarios)
 docs/              Runbooks (operations, connecting the voice system) and the load-test report
 infra/postgres/    Container init: extensions + the non-superuser app role
 infra/             Deploy guide (infra/railway/README.md), Postgres bootstrap, image smoke test
-.github/workflows/ CI (activates when this folder becomes the repo root)
 ```
+
+CI is `.github/workflows/ai-receptionist-ci.yml` at the **repository root**
+(GitHub only reads workflows there). It runs on pushes to `main` and on pull
+requests that touch `ai-receptionist/`.
 
 ## Documentation standard
 
