@@ -15,7 +15,7 @@ set -uo pipefail
 STANZA=${BACKUP_STANZA:-receptionist}
 MAX_AGE_H=${MAX_BACKUP_AGE_HOURS:-26}
 WARN_READY=${WARN_READY_SEGMENTS:-16}
-PG_PORT=${PG_PORT:-5432}
+PG_PORT=${PG_PORT:-${PGPORT:-5432}}
 
 status=0
 report() {  # level message

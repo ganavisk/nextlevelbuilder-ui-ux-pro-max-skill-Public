@@ -105,7 +105,7 @@ Most managed providers don't allow `archive_command`, so pgBackRest can't run ag
 - use the provider's own PITR, with at least 7 days of retention, and drill restores the provider makes;
 - run Postgres yourself, as above.
 
-**Railway: TBD.** Whether Railway's Postgres offers PITR is unverified, because its docs were unreachable from the environment this was written in. If it only takes daily snapshots, the RPO is up to 24 hours of appointments. On Railway, running pgBackRest means running Postgres as your own service: an image with pgvector and pgBackRest, a volume, and a scheduled job for `backup.sh`. That image hasn't been built.
+**Railway: TBD.** Whether Railway's Postgres offers PITR is unverified, because its docs were unreachable from the environment this was written in. If it only takes daily snapshots, the RPO is up to 24 hours of appointments. On Railway, running pgBackRest means running Postgres as your own service: **`infra/postgres/image`** has Postgres, pgvector and pgBackRest, with the backup scheduler built in. See `postgres-image.md`.
 
 ## Restoring
 

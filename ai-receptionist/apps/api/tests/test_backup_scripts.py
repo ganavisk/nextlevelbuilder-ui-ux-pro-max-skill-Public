@@ -10,7 +10,14 @@ from pathlib import Path
 import pytest
 
 INFRA = Path(__file__).resolve().parents[3] / "infra"
-SCRIPTS = sorted([*(INFRA / "pgbackrest").glob("*.sh"), INFRA / "postgres" / "pitr-restore.sh"])
+SCRIPTS = sorted(
+    [
+        *(INFRA / "pgbackrest").glob("*.sh"),
+        *(INFRA / "postgres" / "image").glob("*.sh"),
+        INFRA / "postgres" / "pitr-restore.sh",
+        INFRA / "scripts" / "smoke-postgres-image.sh",
+    ]
+)
 REQUIRED = {
     "PGBACKREST_REPO1_S3_BUCKET": "b",
     "PGBACKREST_REPO1_S3_ENDPOINT": "s3.example.com",

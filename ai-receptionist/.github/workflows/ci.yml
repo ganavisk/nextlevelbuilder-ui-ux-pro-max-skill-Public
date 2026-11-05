@@ -76,6 +76,39 @@ jobs:
         working-directory: apps/api
         run: pytest -q
 
+  postgres-image:
+    # The self-run database image (infra/postgres/image): Postgres, pgvector
+    # and pgBackRest from Ubuntu's packages. pgvector here differs from the
+    # api job's (pgvector/pgvector:pg16), so the whole suite runs against the
+    # image too: production's database engine is the one that was tested.
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: apps/api/requirements.lock
+      - name: Install
+        run: pip install -e "apps/api[dev]" -c apps/api/requirements.lock
+      - name: Build image
+        run: docker build -f infra/postgres/image/Dockerfile -t receptionist-postgres:ci infra
+      - name: Smoke test the image, and leave it running
+        run: KEEP=1 infra/scripts/smoke-postgres-image.sh receptionist-postgres:ci
+      - name: Migrate
+        working-directory: apps/api
+        run: alembic upgrade head
+      - name: Test against the image
+        working-directory: apps/api
+        run: pytest -q
+
   dashboard:
     runs-on: ubuntu-latest
     defaults:

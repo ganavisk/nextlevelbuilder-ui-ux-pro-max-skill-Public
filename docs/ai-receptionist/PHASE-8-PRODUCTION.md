@@ -19,12 +19,13 @@
 | **Railway and Vercel deploy guide**, security headers, connection budget | `infra/railway/README.md`, `apps/dashboard/vercel.json` | 📄 written; not run against Railway (§5) |
 | **Load test** of the live call path, with integrity checks | `scripts/loadtest*.py`, `docs/load-test.md` | ✅ 0 errors, 0 overlaps after the fix |
 | **Operations runbook** and **dead-letter requeue tool** | `docs/runbooks/operations.md`, `scripts/requeue_dead.py` | ✅ 4 tests (atomic move) |
+| **Postgres image** (pgvector, pgBackRest, built-in backup scheduler) for self-run Postgres | `infra/postgres/image`, `docs/runbooks/postgres-image.md` | ✅ 517 tests against it, CI job, restore-drilled |
 | **Tenant #2 proof** (zero code, isolated) | `tests/test_second_tenant.py` | ✅ 3 tests (§2) |
 | **Database review**: an RLS audit, a retrieval-recall bug and hot-path indexes | migration `0012`, `retrieval.py`, `core/db.py` | ✅ EXPLAIN-measured (§3) |
 
 Phase 8 also delivered product work that came out of using the system: service bays, the auto repair tenant, the Test Lab, voice-agent sync and a voice review (§6).
 
-**Backend test count: 516, up from 259 at Phase 7 close.** `ruff check`, `ruff format` and `mypy --strict` are clean, and the dashboard `next build` is clean.
+**Backend test count: 520, up from 259 at Phase 7 close.** `ruff check`, `ruff format` and `mypy --strict` are clean, and the dashboard `next build` is clean.
 
 ## 2. Tenant #2: onboarding by configuration
 
@@ -186,7 +187,7 @@ The procedure is in `docs/runbooks/backup-and-restore.md`, with the drill log.
 - **If the bucket is unreachable long enough to queue 4 GiB of WAL, pgBackRest drops WAL** rather than let the disk fill and stop Postgres. That's availability over recovery window, and it's why the CRITICAL alert matters.
 - **The cipher passphrase is a single point of failure.** It needs escrow outside the host and the bucket's account, and it can't be rotated in place.
 - **The bucket was a stand-in.** It was moto's S3 server behind nginx TLS, so real credential checks, a provider's own behaviour and two regions are unexercised. Repeat the drill against the real bucket.
-- **Managed Postgres won't run pgBackRest.** Whether Railway's Postgres offers PITR is unverified. On Railway, pgBackRest means a self-run Postgres service; that image isn't built.
+- **Managed Postgres won't run pgBackRest.** Whether Railway's Postgres offers PITR is unverified. The alternative is now built: **`infra/postgres/image`** (Postgres 16.15, pgvector 0.6.0, pgBackRest 2.50, with a built-in backup scheduler). The full API suite passes against it (517), it's in CI, and it was restore-drilled as a copy and as a new primary (`docs/runbooks/postgres-image.md`). It hasn't been deployed on Railway yet.
 - **The end-to-end RTO target (≤ 30 min) is proposed, not confirmed.** The cutover step hasn't been drilled.
 
 Redis holds only queues and live call state. Losing it loses queued jobs (summaries, texts, CRM syncs), not records.
@@ -255,7 +256,7 @@ These came out of exercising the system rather than the original plan. Each was 
 
 | Check | Result |
 |---|---|
-| `pytest`, live Postgres 16 + Redis, as the restricted role | **516 passed** |
+| `pytest`, live Postgres 16 + Redis, as the restricted role | **520 passed** |
 | `ruff check`, `ruff format --check`, `mypy --strict` | clean |
 | Dashboard `next build` (strict type-check) | clean |
 | Migrations 0008–0012: up, down, up | ✅ |
@@ -286,7 +287,7 @@ These came out of exercising the system rather than the original plan. Each was 
 
 - **Backups (§3.7):** pgBackRest to an encrypted offsite bucket is built and drilled. RPO 52 s measured; restore under 5 s. Still open before real data:
   - create the real bucket (another region, versioning on, no version-delete for the host's key), escrow the passphrase, and repeat the drill against it;
-  - decide where Postgres runs: the provider's PITR, or self-run with pgBackRest;
+  - decide where Postgres runs: the provider's PITR, or `infra/postgres/image` (built, tested and drilled; not yet deployed on Railway);
   - drill the cutover;
   - confirm the proposed 30-minute RTO.
 - **Railway IaC:** the deprecated Config as Code needs porting to `.railway/railway.ts` before 2026-12-01. Its syntax is unverified (§5).

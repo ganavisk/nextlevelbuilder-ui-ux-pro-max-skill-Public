@@ -182,28 +182,39 @@ def compare(expected: dict[str, Any], actual: dict[str, Any]) -> list[tuple[str,
 
 
 def app_role_checks(app_url: str, admin: Connection) -> list[tuple[str, bool, str]]:
+    # The tenant with the most appointments, or else any tenant: an empty
+    # database (a new one, or a restore to just after a deletion) must still
+    # prove the role can log in and is scoped. 0 of 0 is a valid answer.
     tenant = admin.execute(
-        text("SELECT tenant_id::text FROM appointments GROUP BY 1 ORDER BY count(*) DESC LIMIT 1")
+        text(
+            "SELECT t.id::text FROM tenants t LEFT JOIN appointments a ON a.tenant_id = t.id "
+            "GROUP BY t.id ORDER BY count(a.id) DESC, t.id LIMIT 1"
+        )
     ).scalar()
-    if tenant is None:
-        return [("application role reads with a tenant set", False, "no appointments")]
-    expected = admin.execute(
-        text("SELECT count(*) FROM appointments WHERE tenant_id = :t"), {"t": tenant}
-    ).scalar_one()
+    expected = 0
+    if tenant is not None:
+        expected = admin.execute(
+            text("SELECT count(*) FROM appointments WHERE tenant_id = :t"), {"t": tenant}
+        ).scalar_one()
     engine = _engine(app_url)
     with engine.begin() as conn:
         unset = conn.execute(text("SELECT count(*) FROM appointments")).scalar_one()
-        conn.execute(text("SELECT set_config('app.tenant_id', :t, true)"), {"t": tenant})
-        scoped = conn.execute(text("SELECT count(*) FROM appointments")).scalar_one()
+        if tenant is not None:
+            conn.execute(text("SELECT set_config('app.tenant_id', :t, true)"), {"t": tenant})
+            scoped = conn.execute(text("SELECT count(*) FROM appointments")).scalar_one()
     engine.dispose()
-    return [
-        ("application role sees nothing without a tenant", unset == 0, f"{unset} rows"),
-        (
-            "application role reads its tenant's rows",
-            scoped == expected,
-            f"{scoped} of {expected} appointments",
-        ),
-    ]
+    results = [("application role sees nothing without a tenant", unset == 0, f"{unset} rows")]
+    if tenant is None:
+        results.append(("application role reads its tenant's rows", True, "skipped: no tenants"))
+    else:
+        results.append(
+            (
+                "application role reads its tenant's rows",
+                scoped == expected,
+                f"{scoped} of {expected} appointments",
+            )
+        )
+    return results
 
 
 def main() -> int:

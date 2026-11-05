@@ -44,6 +44,22 @@ BYPASSRLS role. Note this means `DATABASE_URL` must not reference the
 Postgres service's own URL variable; build it for `receptionist_app`. Any of
 `postgres://`, `postgresql://` or `postgresql+asyncpg://` is accepted.
 
+**Or run Postgres yourself, with backups to a bucket.** If the managed
+Postgres has no point-in-time recovery, deploy `infra/postgres/image` as its
+own service. That's Postgres 16, pgvector and pgBackRest, with the backup
+scheduler built in. Set it up like this (not yet tried on Railway itself):
+- **Root Directory** `infra`; Dockerfile `postgres/image/Dockerfile`
+  (`RAILWAY_DOCKERFILE_PATH`).
+- **A volume** mounted at `/var/lib/postgresql/data`.
+- **No public domain or TCP proxy.** The API reaches it over the private
+  network.
+- **Variables:** the `PGBACKREST_REPO1_*` bucket settings,
+  `POSTGRES_PASSWORD`, and `APP_DB_PASSWORD`, which creates
+  `receptionist_app` on first boot.
+
+Restores, monitoring and every variable are in
+`docs/runbooks/postgres-image.md`.
+
 **Redis.** Queues, call state and the login throttle. A managed Redis is
 fine; set `REDIS_URL`. The workers' consumer connections are built to
 survive idle-connection reaping (`core/queue.py: worker_redis`).
@@ -172,9 +188,9 @@ sessions, and lower `DB_POOL_SIZE`/`DB_MAX_OVERFLOW` if you scale out.
   run Postgres yourself with pgBackRest to an offsite bucket:
   `infra/pgbackrest/` has the setup, scheduled backup, monitoring and restore
   scripts. A managed Postgres won't accept its `archive_command`, so on
-  Railway that means a Postgres service from your own image (pgvector and
-  pgBackRest), which isn't built yet. Procedure, the verification tool and
-  the drill log are in `docs/runbooks/backup-and-restore.md`. Redis holds only queues and call
+  Railway that means a Postgres service from `infra/postgres/image` (see
+  section 1). Procedure, the verification tool and the drill log are in
+  `docs/runbooks/backup-and-restore.md`. Redis holds only queues and call
   state; losing it loses queued jobs, not records.
 
 Operating the running system (incidents, queues, rotating secrets) is in
