@@ -6,65 +6,106 @@ Appointments, callbacks and call records are the product. This runbook says:
 - how to restore;
 - how to prove the backups work before we need them.
 
-Commands assume Postgres 16. `scripts/...` paths are relative to `apps/api`.
+Commands assume Postgres 16. `scripts/...` paths are relative to `apps/api`, and `infra/...` paths to the repo's `ai-receptionist/` folder.
 
 ## Targets
 
-| | Target | Measured in the 2026-11-04 drill |
+| | Target | Measured (drills below) |
 |---|---|---|
-| **RPO**, data lost if the server is destroyed | ≤ 60 s (`archive_timeout`) | **43.2 s** |
+| **RPO**, data lost if the server is destroyed | ≤ 60 s (`archive_timeout`) | **52.1 s**, restoring from the offsite bucket after a crash |
 | **RPO**, recovering from a bad write such as a deletion or a bad migration | 0: restore to just before it | **0**: replay stopped at the transaction before the DELETE |
-| **RTO**, restore and replay until the copy accepts connections | scales with data size | **2.7–3.3 s** for 117 MB |
+| **RTO**, restore and replay until the copy accepts connections | scales with data size | **4.3–4.8 s** from the bucket for 165 MB |
 | **RTO**, until callers are served again | ≤ 30 min (proposed; confirm) | not drilled: the cutover below is unrehearsed |
 
 The 30-minute end-to-end target is a proposal for the product owner to confirm. It covers noticing the problem, choosing the target time, restoring, verifying and repointing the services. Only the restore and verify steps have been timed.
 
-## How point-in-time recovery works here
+## How it works
 
-A **base backup** is a full physical copy, taken with `pg_basebackup`. The **WAL archive** holds every change made since. A restore unpacks the base backup and replays the archive up to a chosen moment, or to the end. So:
+**pgBackRest** keeps the backups in an S3-compatible bucket in another region. That can be AWS S3, Cloudflare R2, Backblaze B2 or MinIO.
 
-- **RPO** is whatever WAL hasn't reached the archive yet. Postgres archives a 16 MB segment when it fills, or after `archive_timeout`, whichever comes first. That's 60 s here, so at most a minute of writes lives only on the server.
-- **Replay time** grows with the WAL since the last base backup. Take base backups often enough that replay stays short. Weekly is the starting point; measure it at production volume.
+- **Full backup** weekly, plus a **block-level incremental** daily. An incremental uploads only the blocks that changed.
+- **The WAL archive** holds every change since: Postgres hands each finished 16 MB segment to `pgbackrest archive-push`.
+- **Restoring** downloads the newest backup before the target and replays WAL up to the chosen moment, or to the end.
+- **Encryption.** Everything is encrypted on the database host (AES-256-CBC) and compressed (zstd) before upload. The bucket and its provider only ever hold ciphertext.
 
-### Settings (self-managed Postgres)
+What this gives you:
+- **RPO** is whatever WAL hasn't reached the bucket yet. A segment is shipped when it fills, or after `archive_timeout` (60 s), whichever comes first. At most a minute of writes lives only on the server.
+- **Replay time** grows with the WAL since the last backup, and daily incrementals keep it to under a day's worth.
+- **The recovery window** is `BACKUP_RETENTION_DAYS`, 14 by default. You can restore to any moment in it. pgBackRest expires older backups and WAL after each backup.
 
-```sql
-ALTER SYSTEM SET archive_mode = 'on';                  -- needs a restart
-ALTER SYSTEM SET archive_timeout = '60s';              -- the RPO bound
-ALTER SYSTEM SET archive_command =
-  'test ! -f /backups/wal/%f.gz && gzip -c %p > /backups/wal/%f.gz.tmp && mv /backups/wal/%f.gz.tmp /backups/wal/%f.gz';
-```
+### Set it up (self-managed Postgres)
 
-- **The command is atomic.** It writes `.tmp` and then renames, so a crash mid-copy can't leave a truncated segment that looks complete.
-- **It refuses to overwrite** an existing segment.
-- **It's compressed.** `archive_timeout` ships a segment every minute even when idle, which is about 23 GB a day uncompressed. In the drill, an idle 16 MB segment gzipped to 24.5 KB.
-
-Then take a base backup:
+On the database host, as root:
 
 ```bash
-pg_basebackup -D /backups/base/$(date -u +%Y%m%dT%H%M%SZ) -Ft -z -X stream -c fast
+apt install pgbackrest            # 2.50 on Ubuntu 24.04; any 2.46+ supports block incrementals
+# Secrets come from the host's secret store, never from the repo or the shell history:
+export PGBACKREST_REPO1_S3_BUCKET=... PGBACKREST_REPO1_S3_ENDPOINT=... \
+       PGBACKREST_REPO1_S3_REGION=... PGBACKREST_REPO1_S3_KEY=... \
+       PGBACKREST_REPO1_S3_KEY_SECRET=... PGBACKREST_REPO1_CIPHER_PASS=...
+# R2, B2 and MinIO also need: PGBACKREST_REPO1_S3_URI_STYLE=path
+infra/pgbackrest/setup.sh
 ```
 
-Then watch the archiver. `failed_count` must stay at 0, and `last_archived_time` must be under a minute old:
+`setup.sh` (re-runnable) does the following:
+1. Writes `/etc/pgbackrest/pgbackrest.conf`. It holds no secrets and is safe to read.
+2. Writes `conf.d/secrets.conf`, mode `640 root:postgres`.
+3. Creates the stanza.
+4. Points `archive_command` at `pgbackrest archive-push`.
+5. Runs `pgbackrest check`, which archives a segment and reads it back from the bucket.
+6. Takes the first full backup.
 
-```sql
-SELECT archived_count, last_archived_wal, last_archived_time, failed_count FROM pg_stat_archiver;
+Then schedule the backups and the monitoring, as the `postgres` user:
+
+```cron
+17 3 * * *    postgres  /opt/receptionist/infra/pgbackrest/backup.sh >> /var/log/pgbackrest/cron.log 2>&1
+*/5 * * * *   postgres  /opt/receptionist/infra/pgbackrest/backup-status.sh || <alert>
 ```
 
-**These are drill settings, not production durability.** In the drill, the archive sat on the same disk as the database, so losing that disk loses both. `cp` and `gzip` don't fsync either. For production, use a tool built for this, **pgBackRest** or **WAL-G**. Either one adds:
-- fsync'd, checksummed pushes to object storage in another region;
-- retention and expiry;
-- parallel restore.
+`backup-status.sh` exits with 0 for OK, 1 for WARNING and 2 for CRITICAL. It reports CRITICAL when:
+- the bucket doesn't answer within 30 s;
+- the stanza is unhealthy;
+- the newest backup is over 26 h old;
+- WAL archiving is failing.
 
-The restore procedure and the verification below stay the same.
+It warns when WAL is queuing up.
 
-### Managed Postgres (the likely production setup)
+### The bucket
 
-Most managed providers do not let you set `archive_command`. Point-in-time recovery is then the provider's feature, or it isn't available.
+- **Another region** from the database, ideally another provider. The point is surviving the loss of the database's whole site.
+- **A key that can reach this bucket only.** It needs read, write, list and delete. pgBackRest deletes what retention has expired.
+- **Protect it from a compromised database host.** That host holds a key that can delete.
+  - Turn on **bucket versioning**, with a lifecycle rule that removes noncurrent versions after 30 days.
+  - Don't give the host's key permission to delete versions (`s3:DeleteObjectVersion`, or the provider's equivalent). Its deletes then only add a delete marker, and anything deleted, by an attacker or by a bad command, is recoverable for a month.
+  - Don't use S3 Object Lock in compliance mode on this bucket: it would also block pgBackRest's own expiry.
 
-- **If the provider offers PITR,** turn it on with at least 7 days' retention. Then run the drill below against a restore the provider makes.
-- **If it only offers daily snapshots,** the RPO is up to **24 hours** of appointments. That's not acceptable for this product. Either move to a provider with PITR, or run Postgres yourself with pgBackRest or WAL-G.
-- **Railway: TBD.** Whether Railway's Postgres offers PITR is unverified, because its docs were unreachable from the environment this was written in. Check that before launch, not after.
+### The cipher passphrase
+
+- **Without it, the backups can't be read, by anyone.** Checked in the drill: with the wrong passphrase, pgBackRest can't even parse its own index.
+- **Keep a copy outside the database host and outside the bucket's account.** A password manager entry owned by two people works.
+- **It can't be changed for an existing repository.** To rotate it:
+  1. Set a new `PGBACKREST_REPO1_PATH` and passphrase, and re-run `setup.sh`. That creates a new repository and takes a new full backup.
+  2. Keep the old path and passphrase until the old repository's backups are past the retention window.
+  3. Then delete the old repository.
+
+### When the bucket is unreachable
+
+Commits never wait for the bucket: `archive-async` pushes WAL from a local spool. During an outage:
+- WAL queues in `pg_wal`;
+- `backup-status.sh` goes CRITICAL;
+- archiving catches up by itself once the bucket is back.
+
+If the outage lasts until 4 GiB of WAL is queued (`archive-push-queue-max`), pgBackRest **drops** WAL so the disk can't fill and stop Postgres. Postgres keeps serving, but the recovery window has a gap. Take a full backup as soon as the bucket returns.
+
+That trades the recovery window for availability. It's the right trade for a live phone line, provided the alert is answered long before the 4 GiB mark.
+
+### Managed Postgres
+
+Most managed providers don't allow `archive_command`, so pgBackRest can't run against them. That leaves two options:
+- use the provider's own PITR, with at least 7 days of retention, and drill restores the provider makes;
+- run Postgres yourself, as above.
+
+**Railway: TBD.** Whether Railway's Postgres offers PITR is unverified, because its docs were unreachable from the environment this was written in. If it only takes daily snapshots, the RPO is up to 24 hours of appointments. On Railway, running pgBackRest means running Postgres as your own service: an image with pgvector and pgBackRest, a volume, and a scheduled job for `backup.sh`. That image hasn't been built.
 
 ## Restoring
 
@@ -73,11 +114,11 @@ Most managed providers do not let you set `archive_command`. Point-in-time recov
 ### 1. Choose the target
 
 - **After a bad write:** a moment just before it. Find it in the API logs or in Postgres's logs, and allow a little margin. Everything committed after the target is left out, including legitimate writes from other businesses.
-- **After losing the server:** `latest`, meaning everything in the archive.
+- **After losing the server:** `latest`, meaning everything in the bucket.
 
 ### 2. Before restoring, take a manifest if the source is still up
 
-This is optional, but it is what turns "it looks fine" into proof:
+This is optional:
 
 ```bash
 python scripts/verify_restore.py snapshot --url "$ADMIN_DATABASE_URL" > before.json
@@ -87,23 +128,21 @@ After a bad write it describes the damaged state, not the target. Use it to see 
 
 ### 3. Restore into a new data directory
 
-On self-managed Postgres:
+On any host with pgBackRest's config and secrets. Nothing is needed from the old server:
 
 ```bash
-sudo -u postgres infra/postgres/pitr-restore.sh \
-    /backups/base/<newest base before the target> /backups/wal \
-    "2026-11-04 18:31:15+00"   `# or: latest` \
-    /var/lib/postgresql/16/restored 5433
+sudo -u postgres infra/pgbackrest/restore.sh "2026-11-05 01:24:23+00" /var/lib/postgresql/16/restored 5433
+sudo -u postgres infra/pgbackrest/restore.sh latest /var/lib/postgresql/16/restored 5433
 ```
 
 The script:
 - refuses to touch an existing directory;
-- starts the copy with **archiving off**, so it doesn't write a second timeline into the production archive;
+- starts the copy with **archiving off**, so it never writes a second timeline into the repository;
 - listens on the local socket only;
 - prints the restore time;
-- fails, with the log, if the archive can't reach the target.
+- fails, with the log, if the bucket can't reach the target.
 
-A managed provider does the equivalent from its console: "restore to a point in time" into a new instance.
+A managed provider does the equivalent from its console. For a plain WAL archive without pgBackRest, use `infra/postgres/pitr-restore.sh`, which needs a base backup and archive directory.
 
 ### 4. Verify before anything points at it
 
@@ -130,7 +169,10 @@ This step hasn't been drilled yet; it's the next thing to rehearse, on staging.
 2. Point `DATABASE_URL` on all four services at the restored database, using the `receptionist_app` login.
 3. Redeploy `api` (its pre-deploy migration is a no-op at head), then the workers.
 4. Check `/readyz` and make a Test Lab call.
-5. Re-enable backups **on the restored database**, which is now the primary: archiving on, and a fresh base backup straight away. Its WAL is a new timeline, and nothing protects it until that base backup exists.
+5. **Protect the new primary at once.**
+   - Re-run `setup.sh` with `PG_DATA` set to its data directory, which re-enables archiving into the repository on the new timeline.
+   - Then run `backup.sh full`. `setup.sh` only takes a full backup when the repository has none, and this one already does.
+   - Until that full backup exists, nothing protects the new primary on its own.
 
 ### 6. Reconcile what lives outside Postgres
 
@@ -150,13 +192,13 @@ This hasn't been drilled. Rehearse it on staging before relying on it.
 
 ## Restore drills
 
-**Cadence:** quarterly, plus after a Postgres major upgrade, a provider change, or a backup-tool change. An untested backup isn't a backup.
+**Cadence:** quarterly, plus after a Postgres major upgrade, a provider or bucket change, a passphrase rotation, or a pgBackRest upgrade. An untested backup isn't a backup.
 
 Each drill:
-1. writes load after the base backup, so the restore has to replay WAL;
+1. writes load after the last backup, so the restore has to replay WAL;
 2. takes a manifest at the target;
 3. makes the mistake;
-4. restores;
+4. restores from the bucket;
 5. runs `verify_restore.py`;
 6. points the API at the copy and signs in.
 
@@ -164,18 +206,32 @@ Record the results below.
 
 ### Drill log
 
-**2026-11-04: local Postgres 16.13, 117 MB.** Base backup 36 MB compressed, taken in 8.5 s. Afterwards, 200 calls went through the real webhook (load test, `--keep`).
+**2026-11-05: pgBackRest 2.50 to an S3 bucket, local Postgres 16.13 (165 MB).**
+
+The bucket was **moto's S3 server behind nginx TLS**, with the certificate verified against a private CA. It was a stand-in, because no real bucket or credentials were available. That means the S3 protocol, multipart uploads and TLS verification were all exercised. Not exercised: real credential checks (moto accepts any key), a provider's own behaviour, network distance, and two regions.
 
 | Scenario | What happened | Result |
 |---|---|---|
-| **A. Operator deletes a business** (cascade; 200 calls and 36 appointments gone). One legitimate write afterwards, a rename. | Restored to T, 16 s before the DELETE. Replay stopped "before commit of transaction 105696", the DELETE. | Restore and promote **2.7 s**. `verify --against`: **25/25** (every table identical; the rename correctly absent). API on the copy: `/readyz` ready, owner login, data served. The same check on the damaged live database failed 9 tables and named the business. |
-| **B. Server lost** (unplanned: no WAL switch). Writer committing every 200 ms. | Restored `latest` from the archive as it stood at the loss. | **43.2 s** of writes lost (178 rows): everything after the last archived segment, within the 60 s bound. Restore **2.7 s**. Structural verify **8/8**. |
-| **C. Compressed archive** | Archiving switched to gzip. A marker row was restored from a `.gz` segment, with plain and gzipped segments mixed. | Restore **3.3 s**. Marker present. |
+| **Setup** | `setup.sh` from scratch | 18 s: stanza, `check`, and a full backup of 165 MB stored as **32.4 MB** (compressed and encrypted). Incremental after 120 calls: 2.8 s. |
+| **Encryption** | Read the bucket directly | Every object starts `Salted__` (AES-256-CBC). 0 plaintext hits for business, policy or role names in all 29 objects. Secrets appear only in `secrets.conf`, not in the config, logs, `postgresql.auto.conf` or the bucket. A wrong passphrase can't read the repository. |
+| **A. A bad script deletes 4 businesses** (200 calls, 72 appointments). One legitimate write afterwards. | Restored to T from the bucket (full + incremental + WAL). The local archive was moved out of reach first. | **4.3 s**. Replay stopped "before commit of transaction 109160", the DELETE. `verify --against`: **25/25** identical; the later write correctly absent. |
+| **B. The bucket is unreachable** for 4 minutes while writes continue | nginx stopped | Writes kept committing (80,000 rows). Monitoring went CRITICAL in 30 s, naming both the bucket and archiving. With the bucket back, archiving **caught up in 2 s**. Drill C's restore contains all 80,000 rows, so there was no gap. |
+| **C. Server crash** (`pg_ctl -m immediate`, no warning) | Restored `latest` from the bucket | **52.1 s** of writes lost (212 rows), within the 60 s bound. Restore **4.8 s**. Structural verify **8/8**. The crashed primary came back with `check` passing. |
 
-Both restored copies ran on timeline 2 with archiving off. Afterwards, 0 timeline-2 or `.history` files had reached the production archive.
+Problems the drill found and fixed:
+- `backup-status.sh` hung for minutes against an unreachable bucket. It's now bounded at 30 s.
+- `restore.sh latest` passed an option pgBackRest refuses without a target.
 
-**Not covered by this drill:**
-- offsite storage, or losing the disk;
+**2026-11-04: plain WAL archive (`cp`, then gzip), local Postgres 16.13 (117 MB).** This was the predecessor setup, now replaced by pgBackRest.
+
+| Scenario | Result |
+|---|---|
+| A. Operator deletes a business | Restored to just before the DELETE in **2.7 s**. **25/25** identical. The API served the copy and the owner could sign in. |
+| B. Server lost (no WAL switch) | **43.2 s** of writes lost. Restore 2.7 s. **8/8**. |
+| C. Gzipped archive | Restore 3.3 s. An idle 16 MB segment gzips to 24.5 KB. |
+
+**Not covered yet:**
+- a real provider's bucket in another region;
 - the cutover (step 5);
 - a single-business copy-back;
 - a managed provider's restore;

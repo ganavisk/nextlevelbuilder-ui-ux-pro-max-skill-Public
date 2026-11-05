@@ -24,7 +24,7 @@
 
 Phase 8 also delivered product work that came out of using the system: service bays, the auto repair tenant, the Test Lab, voice-agent sync and a voice review (§6).
 
-**Backend test count: 499, up from 259 at Phase 7 close.** `ruff check`, `ruff format` and `mypy --strict` are clean, and the dashboard `next build` is clean.
+**Backend test count: 516, up from 259 at Phase 7 close.** `ruff check`, `ruff format` and `mypy --strict` are clean, and the dashboard `next build` is clean.
 
 ## 2. Tenant #2: onboarding by configuration
 
@@ -153,26 +153,40 @@ Each process opens up to `DB_POOL_SIZE + DB_MAX_OVERFLOW` connections, 5 + 10 by
 
 and leave headroom for migrations and operators. The formula is in the Railway README and the runbook. If a managed plan's limit is tight, put PgBouncer in **transaction** mode in front of Postgres. That works because the tenant is set transaction-locally (§3.1), which is exactly what transaction pooling needs.
 
-### 3.7 Backup and recovery: PITR on, restore drilled
+### 3.7 Backup and recovery: pgBackRest to an offsite bucket, restores drilled
 
 The procedure is in `docs/runbooks/backup-and-restore.md`, with the drill log.
 
-**Fix.** Point-in-time recovery: WAL archiving with `archive_timeout = 60s`, written atomically and gzipped, plus a base backup taken with `pg_basebackup`.
-- `infra/postgres/pitr-restore.sh` restores to a timestamp or to `latest`, always into a new data directory, with archiving off on the copy.
-- `scripts/verify_restore.py` decides whether a restore may serve. It checks the schema, row-level security, the app role and the booking constraint. Given a manifest, it also compares full-row hashes for every table, business by business.
+**Fix.** **pgBackRest** backs up to an S3-compatible bucket in another region:
+- a weekly full backup and daily block-level incrementals;
+- continuous WAL archiving (`archive_timeout = 60s`);
+- encryption on the database host (AES-256-CBC) and zstd compression before upload;
+- a 14-day recovery window.
 
-**Evidence** (drilled on 2026-11-04 against local Postgres 16, 117 MB):
+`infra/pgbackrest/` holds the scripts:
+- `setup.sh` takes its settings from environment variables, keeps secrets in a `640 root:postgres` file, and runs `check` plus the first full backup;
+- `backup.sh` is the scheduled backup;
+- `backup-status.sh` is the monitoring check: 0, 1 or 2, bounded at 30 s;
+- `restore.sh` restores to a time or to `latest`, always into a new directory, with archiving off on the copy.
+
+`scripts/verify_restore.py` decides whether a restore may serve. It checks the schema, row-level security, the app role and the booking constraint. Given a manifest, it also compares full-row hashes for every table, business by business.
+
+**Evidence** (2026-11-05, local Postgres 16, 165 MB, against an S3 API stand-in behind verified TLS):
 
 | Scenario | Result |
 |---|---|
-| Operator deletes a business | Restored to just before the DELETE in **2.7 s**. Verified 25/25 identical to the manifest; the API served the copy. |
-| Server lost, no warning | **43.2 s** of writes lost, within the 60 s bound. Restore 2.7 s. |
-| Compressed archive | Restored from `.gz` segments. An idle 16 MB segment is 24.5 KB. |
+| A bad script deletes 4 businesses | Restored from the bucket to just before the DELETE in **4.3 s**. 25/25 identical to the manifest. |
+| Server crash, no warning | **52.1 s** of writes lost, within the 60 s bound. Restored `latest` in 4.8 s. |
+| Bucket unreachable for 4 min | Commits continued; monitoring went CRITICAL in 30 s. Archiving caught up in 2 s with no gap. |
+| Encryption | Every object is ciphertext; 0 plaintext hits. A wrong passphrase can't read the repository. |
+| Size | A 165 MB full backup is stored as 32.4 MB. A daily incremental takes about 3 s. |
 
 **Tradeoffs and what's still open.**
-- **RPO ≤ 60 s costs a segment a minute even when idle.** That's about 23 GB a day uncompressed, and why the archive is gzipped. A tighter RPO needs streaming replication, not a smaller `archive_timeout`.
-- **The drill's archive is on the database's own disk,** and `cp`/`gzip` don't fsync. That proves the procedure, not offsite durability. Production needs pgBackRest or WAL-G to storage in another region, or the managed provider's PITR.
-- **Whether Railway's Postgres offers PITR is unverified.** If it only offers daily snapshots, the RPO is up to 24 hours. That's not acceptable for appointment data.
+- **RPO ≤ 60 s costs a WAL segment a minute even when idle.** zstd makes that cheap. A tighter RPO needs streaming replication, not a smaller `archive_timeout`.
+- **If the bucket is unreachable long enough to queue 4 GiB of WAL, pgBackRest drops WAL** rather than let the disk fill and stop Postgres. That's availability over recovery window, and it's why the CRITICAL alert matters.
+- **The cipher passphrase is a single point of failure.** It needs escrow outside the host and the bucket's account, and it can't be rotated in place.
+- **The bucket was a stand-in.** It was moto's S3 server behind nginx TLS, so real credential checks, a provider's own behaviour and two regions are unexercised. Repeat the drill against the real bucket.
+- **Managed Postgres won't run pgBackRest.** Whether Railway's Postgres offers PITR is unverified. On Railway, pgBackRest means a self-run Postgres service; that image isn't built.
 - **The end-to-end RTO target (≤ 30 min) is proposed, not confirmed.** The cutover step hasn't been drilled.
 
 Redis holds only queues and live call state. Losing it loses queued jobs (summaries, texts, CRM syncs), not records.
@@ -241,7 +255,7 @@ These came out of exercising the system rather than the original plan. Each was 
 
 | Check | Result |
 |---|---|
-| `pytest`, live Postgres 16 + Redis, as the restricted role | **499 passed** |
+| `pytest`, live Postgres 16 + Redis, as the restricted role | **516 passed** |
 | `ruff check`, `ruff format --check`, `mypy --strict` | clean |
 | Dashboard `next build` (strict type-check) | clean |
 | Migrations 0008–0012: up, down, up | ✅ |
@@ -270,10 +284,11 @@ These came out of exercising the system rather than the original plan. Each was 
 
 ## 9. Known gaps and risks
 
-- **Backups (§3.7):** PITR is on and drilled locally (RPO 43 s measured; restore 2.7 s). Still open before real data:
-  - offsite storage (pgBackRest or WAL-G), or confirming the provider's PITR;
-  - a drill of the cutover;
-  - confirming the proposed 30-minute RTO.
+- **Backups (§3.7):** pgBackRest to an encrypted offsite bucket is built and drilled. RPO 52 s measured; restore under 5 s. Still open before real data:
+  - create the real bucket (another region, versioning on, no version-delete for the host's key), escrow the passphrase, and repeat the drill against it;
+  - decide where Postgres runs: the provider's PITR, or self-run with pgBackRest;
+  - drill the cutover;
+  - confirm the proposed 30-minute RTO.
 - **Railway IaC:** the deprecated Config as Code needs porting to `.railway/railway.ts` before 2026-12-01. Its syntax is unverified (§5).
 - **No staging deploy yet.** The load-test numbers come from one shared machine. Rerun them on staging before launch.
 - **`CREDENTIALS_ENCRYPTION_KEY` has no rotation tool.** Rotating it forces every tenant to reconnect Google and HubSpot.
@@ -290,6 +305,6 @@ These came out of exercising the system rather than the original plan. Each was 
 
 ## 10. Next
 
-1. Confirm production PITR: the provider's feature, or pgBackRest/WAL-G to offsite storage. Confirm the RTO target. Then repeat the drill on staging, including the cutover.
+1. Create the production backup bucket and escrow the passphrase, run `infra/pgbackrest/setup.sh` against it, and repeat the restore drill there, including the cutover. Confirm the RTO target.
 2. Deploy to staging, porting the Railway settings to IaC. Then rerun the load test and `make lab-scenarios` there.
 3. Onboard the first real business from its YAML, using `make seed`, `make provision` and `make check-keys`.

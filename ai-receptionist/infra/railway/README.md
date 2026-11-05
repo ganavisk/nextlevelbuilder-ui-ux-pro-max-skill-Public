@@ -169,9 +169,12 @@ sessions, and lower `DB_POOL_SIZE`/`DB_MAX_OVERFLOW` if you scale out.
 - **Backups:** Postgres needs **point-in-time recovery**, not just daily
   snapshots, which could lose a day of appointments. Use the provider's PITR
   if it has one (check Railway's current docs; this is unverified). Otherwise
-  run pgBackRest or WAL-G to offsite storage. Procedure, restore script, the
-  verification tool and the drill log are in
-  `docs/runbooks/backup-and-restore.md`. Redis holds only queues and call
+  run Postgres yourself with pgBackRest to an offsite bucket:
+  `infra/pgbackrest/` has the setup, scheduled backup, monitoring and restore
+  scripts. A managed Postgres won't accept its `archive_command`, so on
+  Railway that means a Postgres service from your own image (pgvector and
+  pgBackRest), which isn't built yet. Procedure, the verification tool and
+  the drill log are in `docs/runbooks/backup-and-restore.md`. Redis holds only queues and call
   state; losing it loses queued jobs, not records.
 
 Operating the running system (incidents, queues, rotating secrets) is in
